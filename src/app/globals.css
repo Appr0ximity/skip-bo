@@ -1,0 +1,97 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-fredoka), ui-rounded, system-ui, sans-serif;
+
+  --color-felt-50: #e9f6ef;
+  --color-felt-300: #2b8a5d;
+  --color-felt-500: #1d6a46;
+  --color-felt-700: #12452e;
+  --color-paper: #fffdf6;
+  --color-paper-2: #f4f0e3;
+  --color-line: #e4dfcf;
+  --color-ink: #1c2a23;
+  --color-muted: #5f7068;
+  --color-card-blue: #1f5fd6;
+  --color-card-green: #16893f;
+  --color-card-red: #d3302f;
+  --color-gold: #ffc533;
+  --color-hint: #7df9ff;
+  --color-sb-from: #ff8a00;
+  --color-sb-to: #e52e71;
+
+  --animate-drop: drop 0.35s ease-out;
+  --animate-glow: glow 1.1s ease-in-out infinite;
+  --animate-rise: rise 0.2s ease-out;
+  --animate-blink: blink 1s infinite;
+
+  @keyframes drop {
+    from { transform: translateY(-18px) scale(1.08); opacity: 0.4; }
+    to { transform: none; opacity: 1; }
+  }
+  @keyframes glow {
+    0%, 100% { box-shadow: 0 0 0 3px var(--color-gold), 0 0 22px rgb(255 197 51 / 0.55); }
+    50% { box-shadow: 0 0 0 3px var(--color-gold), 0 0 6px rgb(255 197 51 / 0.2); }
+  }
+  @keyframes rise {
+    from { transform: translateY(12px); opacity: 0; }
+  }
+  @keyframes blink {
+    50% { opacity: 0.2; }
+  }
+}
+
+/* Card size scale. Components size themselves from --cw (card width). */
+:root {
+  --cw: clamp(46px, 6.2vw, 80px);
+  --mw: clamp(28px, 3.2vw, 40px);
+  --fan: calc(var(--cw) * 0.36);
+  color-scheme: light;
+}
+@media (max-width: 760px) {
+  :root {
+    --cw: clamp(42px, 13vw, 60px);
+    --mw: clamp(22px, 6vw, 30px);
+  }
+}
+@media (max-width: 420px) {
+  :root {
+    --fan: calc(var(--cw) * 0.3);
+  }
+}
+
+body {
+  background:
+    radial-gradient(1100px 650px at 50% 28%, var(--color-felt-300), transparent 70%),
+    linear-gradient(180deg, var(--color-felt-500), var(--color-felt-700));
+  background-color: var(--color-felt-700);
+  background-attachment: fixed;
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-[10px] border border-line bg-white px-4 py-2 font-semibold text-ink transition hover:bg-paper-2 active:translate-y-px disabled:cursor-default disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply border-transparent bg-linear-to-br from-sb-from to-sb-to text-white shadow-[0_3px_10px_rgb(229_46_113/0.3)] hover:bg-transparent hover:brightness-105;
+  }
+  .btn-ghost {
+    @apply border-white/25 bg-white/10 text-white hover:bg-white/20;
+  }
+  .btn-danger {
+    @apply border-red-700 bg-red-700 text-white hover:bg-red-800;
+  }
+  .btn-sm {
+    @apply px-3 py-1.5 text-sm;
+  }
+  .panel {
+    @apply rounded-2xl bg-paper p-5 text-ink shadow-[0_10px_30px_rgb(0_0_0/0.25)];
+  }
+  .field {
+    @apply mt-1 w-full rounded-[9px] border border-line bg-white px-3 py-2 text-ink outline-none focus:ring-2 focus:ring-sb-from;
+  }
+  .lbl {
+    @apply mb-1.5 text-xs font-semibold tracking-wider whitespace-nowrap text-white/70 uppercase;
+  }
+}

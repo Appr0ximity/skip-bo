@@ -1,0 +1,32 @@
+{
+  "name": "skip-bo",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "emulators": "firebase emulators:start --only auth,firestore,database --project demo-skipbo",
+    "deploy": "next build && firebase deploy --only hosting,firestore:rules,database",
+    "test:online": "tsx scripts/e2e-online.ts"
+  },
+  "dependencies": {
+    "firebase": "^13.0.0",
+    "next": "16.4.2",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/turbopack": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.4.2",
+    "firebase-tools": "^15.34.0",
+    "tailwindcss": "^4",
+    "tsx": "^4.20.3",
+    "typescript": "^5"
+  }
+}

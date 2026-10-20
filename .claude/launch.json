@@ -2,10 +2,16 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "skip-bo",
-      "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "5173"],
-      "port": 5173
+      "name": "next-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 3000
+    },
+    {
+      "name": "firebase-emulators",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "emulators"],
+      "port": 4000
     }
   ]
 }
