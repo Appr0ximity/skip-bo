@@ -38,6 +38,9 @@ export interface UserStats {
   skipBoPlayed: number;
   stockPlayed: number;
   pilesCompleted: number;
+  /** Sum over games of the share of the stockpile played (0–1), and how many games that covers. */
+  stockClearedSum: number;
+  stockClearedGames: number;
   byOpponents: Record<string, Tally>;
 }
 
@@ -56,6 +59,8 @@ export const emptyStats = (): UserStats => ({
   skipBoPlayed: 0,
   stockPlayed: 0,
   pilesCompleted: 0,
+  stockClearedSum: 0,
+  stockClearedGames: 0,
   byOpponents: {},
 });
 
@@ -81,6 +86,10 @@ export function applyRecord(prev: UserStats, rec: GameRecord): UserStats {
   s.skipBoPlayed += rec.skipBoPlayed;
   s.stockPlayed += rec.stockPlayed;
   s.pilesCompleted += rec.pilesCompleted;
+  if (rec.stockSize > 0) {
+    s.stockClearedSum += (rec.stockSize - rec.stockLeft) / rec.stockSize;
+    s.stockClearedGames++;
+  }
   const bump = (obj: Record<string, Tally>, k: string) => {
     obj[k] = obj[k] ?? { played: 0, won: 0 };
     obj[k].played++;
@@ -120,3 +129,7 @@ export function fmtDur(ms: number | null | undefined): string {
 }
 
 export const pct = (a: number, b: number) => (b ? ((a / b) * 100).toFixed(1) + "%" : "—");
+
+/** Average share of the stockpile cleared per game, e.g. "64%", or "—" before any game. */
+export const avgStockCleared = (s: UserStats) =>
+  s.stockClearedGames ? `${Math.round((s.stockClearedSum / s.stockClearedGames) * 100)}%` : "—";

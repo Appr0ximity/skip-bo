@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAccount } from "@/context/AccountProvider";
 import { DEFAULT_PREFS, loadLeaderboard, loadProfile, savePrefs, type LeaderRow, type Prefs } from "@/lib/data/store";
-import { fmtDur, pct, type GameRecord, type UserStats } from "@/lib/data/stats";
+import { avgStockCleared, fmtDur, pct, type GameRecord, type UserStats } from "@/lib/data/stats";
 import { createRoom, joinRoom, normalizeCode } from "@/lib/online/rooms";
 import { Modal, useConfirm, useToast } from "./ui";
 
@@ -138,10 +138,6 @@ export function Dashboard() {
 
       <div className="grid items-start gap-5 md:grid-cols-2">
         <div className="panel">
-          <h2 className="mb-3 font-display text-xl font-semibold">Breakdown</h2>
-          <TallyTable title="Opponents" obj={s?.byOpponents} keys={["1", "2", "3", "4", "5"]} label={(k) => k} hideEmpty />
-        </div>
-        <div className="panel">
           <h2 className="mb-3 font-display text-xl font-semibold">Leaderboard</h2>
           {!board ? (
             <p className="text-sm text-muted">Loading…</p>
@@ -200,47 +196,6 @@ export function Dashboard() {
             Delete account
           </button>
         </div>
-      </div>
-
-      <div className="panel">
-        <h2 className="mb-3 font-display text-xl font-semibold">Recent games</h2>
-        {recent.length ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm whitespace-nowrap">
-              <thead>
-                <tr className="text-left text-xs tracking-wide text-muted uppercase">
-                  {["Date", "Result", "Opponents", "Stockpile", "Turns", "Time", "Cards", "Stock left"].map((h) => (
-                    <th key={h} className="p-2">
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {recent.map((h) => (
-                  <tr key={h.id} className="border-t border-line">
-                    <td className="p-2">{new Date(h.date).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</td>
-                    <td className="p-2">
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-xs font-bold ${h.result === "win" ? "bg-emerald-100 text-emerald-800" : h.result === "loss" ? "bg-red-100 text-red-800" : "bg-gray-100 text-gray-600"}`}
-                      >
-                        {cap(h.result)}
-                      </span>
-                    </td>
-                    <td className="p-2">{h.opponents}</td>
-                    <td className="p-2">{h.stockSize}</td>
-                    <td className="p-2">{h.turns}</td>
-                    <td className="p-2">{fmtDur(h.durationMs)}</td>
-                    <td className="p-2">{h.cardsPlayed}</td>
-                    <td className="p-2">{h.stockLeft}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <p className="text-sm text-muted">Your finished games will show up here.</p>
-        )}
       </div>
 
       <RulesModal open={showRules} onClose={() => setShowRules(false)} />
@@ -305,64 +260,13 @@ function StatsPanel({ s }: { s: UserStats | null }) {
           <div className="text-sm text-muted">Win rate{s.forfeits ? ` · ${s.forfeits} forfeit${s.forfeits > 1 ? "s" : ""}` : ""}</div>
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-2">
         {tile("Current streak", s.currentStreak)}
         {tile("Best streak", s.bestStreak)}
         {tile("Fastest win", s.fastestWinTurns == null ? "—" : `${s.fastestWinTurns} turns`, s.fastestWinMs == null ? undefined : fmtDur(s.fastestWinMs))}
-        {tile("Avg game", fmtDur(s.gamesPlayed ? s.totalTimeMs / s.gamesPlayed : null), s.gamesPlayed ? `${(s.totalTurns / s.gamesPlayed).toFixed(1)} turns` : undefined)}
-        {tile("Cards played", s.cardsPlayed, s.totalTurns ? `${(s.cardsPlayed / s.totalTurns).toFixed(2)} / turn` : undefined)}
-        {tile("Skip-Bo cards", s.skipBoPlayed)}
-        {tile("Stockpile cards", s.stockPlayed)}
-        {tile("Piles completed", s.pilesCompleted)}
-        {tile("Time played", fmtDur(s.totalTimeMs))}
+        {tile("Avg stockpile cleared", avgStockCleared(s), "per game")}
       </div>
     </div>
-  );
-}
-
-function TallyTable({
-  title,
-  obj,
-  keys,
-  label,
-  hideEmpty,
-}: {
-  title: string;
-  obj: Record<string, { played: number; won: number }> | undefined;
-  keys: string[];
-  label: (k: string) => string;
-  hideEmpty?: boolean;
-}) {
-  const rows = keys.map((k) => [k, obj?.[k] ?? { played: 0, won: 0 }] as const).filter(([, r]) => !hideEmpty || r.played);
-  return (
-    <table className="mb-3 w-full text-sm">
-      <thead>
-        <tr className="text-left text-xs tracking-wide text-muted uppercase">
-          <th className="p-1.5">{title}</th>
-          <th className="p-1.5">Played</th>
-          <th className="p-1.5">Won</th>
-          <th className="p-1.5">Win rate</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.length ? (
-          rows.map(([k, r]) => (
-            <tr key={k} className="border-t border-line">
-              <td className="p-1.5">{label(k)}</td>
-              <td className="p-1.5">{r.played}</td>
-              <td className="p-1.5">{r.won}</td>
-              <td className="p-1.5">{pct(r.won, r.played)}</td>
-            </tr>
-          ))
-        ) : (
-          <tr className="border-t border-line">
-            <td className="p-1.5 text-muted" colSpan={4}>
-              No games yet
-            </td>
-          </tr>
-        )}
-      </tbody>
-    </table>
   );
 }
 
