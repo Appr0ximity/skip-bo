@@ -23,6 +23,7 @@ import {
   type Room,
   type RoomSettings,
 } from "@/lib/online/rooms";
+import { ChatPanel } from "@/components/ChatPanel";
 import { GameBoard } from "@/components/GameBoard";
 import { ResultModal } from "@/components/ResultModal";
 import { StockField } from "@/components/Dashboard";
@@ -78,7 +79,7 @@ function RoomInner() {
           Lobby
         </Link>
       </TopBar>
-      <main className="px-4 pb-10">{body}</main>
+      <main className="px-4 pb-24">{body}</main>
     </>
   );
 
@@ -99,12 +100,18 @@ function RoomInner() {
   if (room === null) return shell(<Notice title="This lobby has closed">Everyone left, so it was removed. Create a new one from the home page.</Notice>);
   if (!room.members?.[account.uid]) return shell(<Notice title="You're not in this lobby">You left or the game started without you.</Notice>);
 
-  return shell(
-    room.status === "playing" && room.game ? (
-      <OnlineGame code={code} room={room} uid={account.uid} onExit={() => router.push("/")} toast={toast} />
-    ) : (
-      <WaitingRoom code={code} room={room} uid={account.uid} onExit={() => router.push("/")} toast={toast} />
-    ),
+  // The chat sits outside the lobby/game switch so it stays open when a game starts.
+  return (
+    <>
+      {shell(
+        room.status === "playing" && room.game ? (
+          <OnlineGame code={code} room={room} uid={account.uid} onExit={() => router.push("/")} toast={toast} />
+        ) : (
+          <WaitingRoom code={code} room={room} uid={account.uid} onExit={() => router.push("/")} toast={toast} />
+        ),
+      )}
+      <ChatPanel code={code} account={account} />
+    </>
   );
 }
 

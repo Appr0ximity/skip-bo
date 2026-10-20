@@ -13,6 +13,7 @@ async function main() {
   const rtdb = await import("firebase/database");
   const rooms = await import("../src/lib/online/rooms");
   const store = await import("../src/lib/data/store");
+  const chat = await import("../src/lib/online/chat");
   const { buildRecord } = await import("../src/lib/data/stats");
   const { nextMove } = await import("../src/lib/game/ai");
   type GameState = import("../src/lib/game/engine").GameState;
@@ -105,6 +106,24 @@ async function main() {
   const board = await store.loadLeaderboard();
   console.log("  ✓ leaderboard:", board.filter((r) => [users.alice.uid, users.bob.uid].includes(r.uid)).map((r) => `${r.name} ${r.stats.wins}W`).join(", "));
 
+  // Chat: members can talk (emoji included); nobody else can read, impersonate, edit or spam.
+  await as("bob");
+  await chat.sendChat(code, acct("bob"), "gg 🎉🔥 nice game");
+  const msgs = await new Promise<import("../src/lib/online/chat").ChatMessage[]>((res) => {
+    const stop = chat.subscribeChat(code, (m) => {
+      stop();
+      res(m);
+    });
+  });
+  if (msgs.length !== 1 || msgs[0].text !== "gg 🎉🔥 nice game" || msgs[0].uid !== users.bob.uid) throw new Error("chat message wrong: " + JSON.stringify(msgs));
+  console.log("  ✓ member posted a chat message with emoji");
+  await expectDenied("chat message posing as someone else", Promise.resolve(rtdb.push(rtdb.ref(db, `chats/${code}`), { uid: users.alice.uid, name: "alice", text: "fake", ts: Date.now() })));
+  await expectDenied("editing a chat message", rtdb.set(rtdb.ref(db, `chats/${code}/${msgs[0].id}/text`), "edited"));
+  await expectDenied("chat message over 300 characters", Promise.resolve(rtdb.push(rtdb.ref(db, `chats/${code}`), { uid: users.bob.uid, name: "bob", text: "x".repeat(301), ts: Date.now() })));
+  await as("mallory");
+  await expectDenied("non-member reading chat", rtdb.get(rtdb.ref(db, `chats/${code}`)));
+  await expectDenied("non-member posting chat", Promise.resolve(rtdb.push(rtdb.ref(db, `chats/${code}`), { uid: users.mallory.uid, name: "mallory", text: "hi", ts: Date.now() })));
+
   // Second round: bob leaves mid-game, so alice (the only one left) wins.
   await as("alice");
   await rooms.backToLobby(code);
@@ -126,6 +145,10 @@ async function main() {
   await rooms.leaveRoom(code, users.bob.uid);
   if (await roomVal(code)) throw new Error("room not removed");
   console.log("  ✓ empty room removed");
+  // Read with emulator admin access (members can no longer read it once the room is gone).
+  const leftover = await fetch(`http://127.0.0.1:9000/chats/${code}.json?ns=demo-skipbo-default-rtdb`, { headers: { Authorization: "Bearer owner" } }).then((r) => r.json());
+  if (leftover !== null) throw new Error("chat not removed with the room");
+  console.log("  ✓ its chat was deleted too");
   console.log("ALL CHECKS PASSED");
   process.exit(0);
 }

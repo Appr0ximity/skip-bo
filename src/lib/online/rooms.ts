@@ -22,6 +22,7 @@ import {
 } from "firebase/database";
 import { fb } from "../firebase";
 import { applyMove, createGame, leaveSeat, type GameState, type Move } from "../game/engine";
+import { deleteChat } from "./chat";
 import type { Account } from "../data/store";
 
 export const MAX_SEATS = 6;
@@ -177,7 +178,10 @@ export async function leaveRoom(code: string, uid: string): Promise<void> {
   const others = sortedMembers(room).filter(([id]) => id !== uid);
   if (room.hostUid === uid) {
     if (others.length) await update(roomRef(code), { hostUid: others[0][0], [`members/${uid}`]: null });
-    else await remove(roomRef(code));
+    else {
+      await remove(roomRef(code));
+      await deleteChat(code).catch(() => {});
+    }
   } else {
     await remove(ref(fb().rtdb, `rooms/${code}/members/${uid}`));
   }
