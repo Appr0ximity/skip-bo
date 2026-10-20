@@ -153,7 +153,7 @@ export function GameBoard({ game: g, mySeat, canAct, onMove, onToast, actions, o
       <section
         key={seat}
         aria-label={isMe ? "Your cards" : `${p.name}'s cards`}
-        className={`rounded-[20px] border bg-black/20 p-3 transition sm:px-4 sm:pt-3 sm:pb-4 ${p.left ? "opacity-50" : ""} ${active ? "border-gold shadow-[0_0_0_1px_var(--color-gold),0_0_24px_rgb(255_197_51/0.25)]" : g.winner === seat ? "border-emerald-400" : "border-white/10"}`}
+        className={`@container rounded-[20px] border bg-black/20 p-3 transition sm:px-4 sm:pt-3 sm:pb-4 ${p.left ? "opacity-50" : ""} ${active ? "border-gold shadow-[0_0_0_1px_var(--color-gold),0_0_24px_rgb(255_197_51/0.25)]" : g.winner === seat ? "border-emerald-400" : "border-white/10"}`}
       >
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <span className="grid size-6 flex-none place-items-center rounded-full bg-gold text-xs font-bold text-amber-950">{p.name[0]?.toUpperCase()}</span>
@@ -168,7 +168,10 @@ export function GameBoard({ game: g, mySeat, canAct, onMove, onToast, actions, o
           </span>
           {!isMe && opponentExtra && <span className="ml-auto">{opponentExtra(seat)}</span>}
         </div>
-        <div className="flex flex-wrap items-start gap-[clamp(0.8rem,3vw,2.2rem)]">
+        {/* From tablet width up, stockpile + 5-card hand + 4 discard piles always share one row:
+            cards are sized from this area's own width (≈11.9 card widths + the stockpile's
+            edge), so nothing wraps. Phones keep the hand on its own row. */}
+        <div className="flex flex-wrap items-start gap-[clamp(0.8rem,3vw,2.2rem)] sm:flex-nowrap sm:gap-[calc(var(--cw)*0.35)] sm:[--cw:clamp(30px,calc((100cqw-26px)/11.9),80px)] sm:[--fan:calc(var(--cw)*0.36)]">
           <div>
             <div className="lbl mb-3.5">Stockpile</div>
             <StockPile count={p.stock.length}>
@@ -177,9 +180,9 @@ export function GameBoard({ game: g, mySeat, canAct, onMove, onToast, actions, o
           </div>
           {/* Stockpile always left, discards always right; the hand follows the stockpile
               (on phones it wraps onto its own row below them). */}
-          <div className="order-last min-w-0 basis-full sm:order-none sm:ml-[clamp(0.5rem,2vw,2rem)] sm:flex-1 sm:basis-auto">
+          <div className="order-last min-w-0 basis-full sm:order-none sm:ml-[calc(var(--cw)*0.3)] sm:flex-1 sm:basis-auto">
             <div className="lbl mb-3.5">Hand</div>
-            <div className="flex min-h-[calc(var(--cw)*1.4)] items-center gap-[clamp(0.3rem,1vw,0.6rem)]">
+            <div className="flex min-h-[calc(var(--cw)*1.4)] items-center gap-[clamp(0.3rem,1vw,0.6rem)] sm:gap-[calc(var(--cw)*0.1)]">
               {p.hand.length ? (
                 p.hand.map((c, i) => (isMe ? <Card key={i} value={c} {...srcProps(`hand:${i}`)} /> : <CardBack key={i} />))
               ) : (
@@ -189,7 +192,7 @@ export function GameBoard({ game: g, mySeat, canAct, onMove, onToast, actions, o
           </div>
           <div className="ml-auto">
             <div className="lbl mb-3.5">Discards</div>
-            <div className="flex gap-[clamp(0.3rem,1.2vw,0.8rem)]">
+            <div className="flex gap-[clamp(0.3rem,1.2vw,0.8rem)] sm:gap-[calc(var(--cw)*0.12)]">
               {p.discards.map((d, i) => {
                 const t = `mydiscard:${i}`;
                 const key = `${seat}:${i}`;
