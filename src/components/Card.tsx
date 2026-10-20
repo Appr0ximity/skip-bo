@@ -38,13 +38,21 @@ export function Card({ value, as, mini, label, selected, hinted, className = "",
   if (value === SB) {
     return (
       <div className={`${base} ${size} ${raised} ${ring} bg-linear-to-br from-sb-from to-sb-to text-white before:opacity-45 ${state} ${className}`} {...rest}>
-        <span className="text-center text-[calc(var(--cw)*0.2)] leading-[1.05] tracking-wide">
-          SKIP
-          <br />
-          BO
-        </span>
-        {as != null && (
-          <span className="absolute right-[7%] bottom-[5%] rounded-full bg-white px-[0.35em] text-[calc(var(--cw)*0.2)] leading-[1.35] text-sb-to">{as}</span>
+        {as != null ? (
+          // On a building pile the wild card shows the number it stands for, in Skip-Bo colors.
+          <>
+            {!mini && <span className="absolute top-[5%] left-[10%] text-[calc(var(--cw)*0.19)] leading-none">{as}</span>}
+            <span className="text-[calc(var(--cw)*0.52)] leading-none" aria-label={`Skip-Bo card as ${as}`}>
+              {as}
+            </span>
+            {!mini && <span className="absolute right-[10%] bottom-[5%] rotate-180 text-[calc(var(--cw)*0.19)] leading-none">{as}</span>}
+          </>
+        ) : (
+          <span className="text-center text-[calc(var(--cw)*0.2)] leading-[1.05] tracking-wide">
+            SKIP
+            <br />
+            BO
+          </span>
         )}
       </div>
     );
