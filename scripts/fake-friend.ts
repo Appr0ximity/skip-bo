@@ -53,7 +53,7 @@ async function main() {
     if (g.winner != null) {
       if (!recorded.has(g.id)) {
         recorded.add(g.id);
-        await store.recordGame(acct, buildRecord(g, seat, { mode: "online" }));
+        await store.recordGame(acct, buildRecord(g, seat));
         console.log(`game over — winner ${g.players[g.winner].name}`);
       }
       continue;

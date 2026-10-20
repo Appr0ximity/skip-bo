@@ -1,8 +1,7 @@
 "use client";
 
 /* Profile, stats and history storage in Firestore:
- *   users/{uid}  and  users/{uid}/games/{gameId}
- * Only an unfinished solo game is kept in this browser's localStorage. */
+ *   users/{uid}  and  users/{uid}/games/{gameId} */
 
 import {
   collection,
@@ -20,7 +19,6 @@ import {
 } from "firebase/firestore";
 import { fb } from "../firebase";
 import { applyRecord, emptyStats, normalizeStats, type GameRecord, type UserStats } from "./stats";
-import type { GameState } from "../game/engine";
 
 export interface Account {
   uid: string;
@@ -28,42 +26,14 @@ export interface Account {
 }
 
 export interface Prefs {
-  stockSize: number;
-  opponents: number;
-  difficulty: "easy" | "medium" | "hard";
-  speed: "slow" | "normal" | "fast";
+  stockSize: number; // default for lobbies you create
 }
-export const DEFAULT_PREFS: Prefs = { stockSize: 30, opponents: 1, difficulty: "medium", speed: "normal" };
+export const DEFAULT_PREFS: Prefs = { stockSize: 30 };
 
 export interface LeaderRow {
   uid: string;
   name: string;
   stats: UserStats;
-}
-
-/* ---------- localStorage helpers ---------- */
-
-function lsGet<T>(k: string, d: T): T {
-  try {
-    const v = localStorage.getItem(k);
-    return v == null ? d : (JSON.parse(v) as T);
-  } catch {
-    return d;
-  }
-}
-function lsSet(k: string, v: unknown) {
-  try {
-    localStorage.setItem(k, JSON.stringify(v));
-  } catch {
-    /* storage full or blocked */
-  }
-}
-function lsDel(k: string) {
-  try {
-    localStorage.removeItem(k);
-  } catch {
-    /* ignore */
-  }
 }
 
 /* ---------- profile ---------- */
@@ -138,18 +108,3 @@ export async function deleteCloudData(uid: string) {
   await batch.commit();
   await deleteDoc(doc(db, "users", uid));
 }
-
-/* ---------- in-progress solo game (per device) ---------- */
-
-export interface SavedSolo {
-  game: GameState;
-  settings: Prefs;
-  elapsedMs: number;
-}
-const soloKey = (uid: string) => `skipbo:solo:${uid}`;
-
-export const solo = {
-  load: (uid: string) => lsGet<SavedSolo | null>(soloKey(uid), null),
-  save: (uid: string, s: SavedSolo) => lsSet(soloKey(uid), s),
-  clear: (uid: string) => lsDel(soloKey(uid)),
-};

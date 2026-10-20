@@ -1,5 +1,8 @@
-/* Computer opponents. nextMove() never mutates the game. */
-import { SB, top, canPlayOn, type Card, type Difficulty, type GameState, type Move, type PlayerState, type Source } from "./engine";
+/* Move suggestions for the Hint button (and the scripted test player).
+ * nextMove() never mutates the game. */
+import { SB, top, canPlayOn, type Card, type GameState, type Move, type PlayerState, type Source } from "./engine";
+
+export type Difficulty = "easy" | "medium" | "hard";
 
 const MAX_WILDS: Record<Difficulty, number> = { easy: 1, medium: 1, hard: 2 };
 const pick = <T,>(a: T[]): T => a[Math.floor(Math.random() * a.length)];

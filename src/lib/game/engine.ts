@@ -10,7 +10,6 @@ export const NUM_DISCARD = 4;
 const DECK_SIZE = 162; // 144 numbered (12 × 1–12) + 18 Skip-Bo
 
 export type Card = number;
-export type Difficulty = "easy" | "medium" | "hard";
 
 export type Source =
   | { type: "hand"; index: number }
@@ -32,11 +31,9 @@ export interface PlayerStats {
 
 export interface PlayerState {
   id: number;
-  uid: string | null; // account id for online games
+  uid: string | null; // account id
   name: string;
-  isHuman: boolean;
-  difficulty: Difficulty | null;
-  left?: boolean; // human who left; a bot plays their seat
+  left?: boolean; // left or was removed — their turns are skipped
   stock: Card[];
   hand: Card[];
   discards: Card[][];
@@ -67,8 +64,6 @@ export interface GameState {
 
 export interface PlayerSetup {
   name: string;
-  isHuman: boolean;
-  difficulty?: Difficulty | null;
   uid?: string | null;
 }
 
@@ -107,8 +102,6 @@ export function createGame(opts: { stockSize: number; players: PlayerSetup[]; st
       id: i,
       uid: p.uid ?? null,
       name: p.name,
-      isHuman: p.isHuman,
-      difficulty: p.difficulty ?? null,
       stock: [],
       hand: [],
       discards: Array.from({ length: NUM_DISCARD }, () => []),
@@ -244,9 +237,29 @@ export function canEndTurn(g: GameState): boolean {
 }
 
 export function endTurn(g: GameState): boolean {
-  g.current = (g.current + 1) % g.players.length;
+  // Skip anyone who left. leaveSeat() ends the game before fewer than two players remain.
+  do g.current = (g.current + 1) % g.players.length;
+  while (g.players[g.current].left);
   g.turn++;
   startTurn(g);
+  return true;
+}
+
+/** A player leaves (or is removed): their turns are skipped from now on.
+ * If only one player remains, that player wins. */
+export function leaveSeat(g: GameState, seat: number, reason: string): boolean {
+  const p = g.players[seat];
+  if (!p || p.left || g.winner != null) return false;
+  p.left = true;
+  addLog(g, seat, `${p.name} ${reason}.`);
+  const active = g.players.map((_, i) => i).filter((i) => !g.players[i].left);
+  if (active.length === 1) {
+    g.winner = active[0];
+    g.finishedAt = Date.now();
+    addLog(g, active[0], `${g.players[active[0]].name} wins — everyone else left.`);
+  } else if (g.current === seat) {
+    endTurn(g);
+  }
   return true;
 }
 
@@ -255,8 +268,5 @@ export function applyMove(g: GameState, mv: Move): boolean {
   if (mv.type === "discard") return discard(g, mv.hand, mv.pile);
   return canEndTurn(g) ? endTurn(g) : false;
 }
-
-/** A human seat that left is played by a bot from then on. */
-export const isBotSeat = (p: PlayerState) => !p.isHuman || !!p.left;
 
 export const cloneGame = (g: GameState): GameState => JSON.parse(JSON.stringify(g));

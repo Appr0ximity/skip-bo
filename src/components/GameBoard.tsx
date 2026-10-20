@@ -3,14 +3,13 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { canPlayOn, cardName, sourceCard, top, type GameState, type Move, type Source } from "@/lib/game/engine";
 import { nextMove } from "@/lib/game/ai";
-import { Card, CardBack, Stack } from "./Card";
+import { Card, CardBack, Stack, StockPile } from "./Card";
 
 const srcKey = (s: Source | null) => (s ? (s.type === "stock" ? "stock" : `${s.type}:${s.index}`) : "");
 const parseSrc = (k: string): Source => {
   const [type, i] = k.split(":");
   return type === "stock" ? { type: "stock" } : { type: type as "hand" | "discard", index: Number(i) };
 };
-const cap = (s?: string | null) => (s ? s[0].toUpperCase() + s.slice(1) : "");
 
 interface Props {
   game: GameState;
@@ -167,29 +166,27 @@ export function GameBoard({ game: g, mySeat, canAct, onMove, onToast, actions, o
           {order.map((i) => {
             const p = g.players[i];
             const active = g.current === i && g.winner == null;
-            const isOnlineHuman = online && p.isHuman && !p.left;
+            const showPresence = online && !p.left;
             return (
               <div
                 key={i}
-                className={`flex items-center justify-between gap-3 rounded-2xl border bg-black/20 px-3 py-2 transition sm:block ${active ? "border-gold shadow-[0_0_0_1px_var(--color-gold),0_0_24px_rgb(255_197_51/0.25)]" : g.winner === i ? "border-emerald-400" : "border-white/10"}`}
+                className={`flex items-center justify-between gap-3 rounded-2xl border bg-black/20 px-3 py-2 transition sm:block ${p.left ? "opacity-50" : ""} ${active ? "border-gold shadow-[0_0_0_1px_var(--color-gold),0_0_24px_rgb(255_197_51/0.25)]" : g.winner === i ? "border-emerald-400" : "border-white/10"}`}
               >
                 <div className="flex min-w-0 flex-col items-start gap-0.5 sm:mb-2 sm:flex-row sm:items-center sm:gap-2">
                   <span className="hidden size-6 flex-none place-items-center rounded-full bg-gold text-xs font-bold text-amber-950 sm:grid">{p.name[0]?.toUpperCase()}</span>
                   <b className="truncate">{p.name}</b>
-                  <span className="rounded-full bg-white/15 px-2 text-[0.7rem]">
-                    {p.left ? "Bot (left)" : p.isHuman ? "Player" : cap(p.difficulty)}
-                  </span>
-                  {isOnlineHuman && (
+                  {p.left && <span className="rounded-full bg-white/15 px-2 text-[0.7rem]">Left</span>}
+                  {showPresence && (
                     <span className={`text-[0.7rem] ${online[i] ? "text-emerald-300" : "text-red-300"}`}>{online[i] ? "● online" : "● offline"}</span>
                   )}
                   <span className="text-xs text-white/70">{p.hand.length} in hand</span>
                 </div>
                 <div className="flex gap-3">
                   <div>
-                    <div className="lbl text-[0.62rem] sm:text-xs">Stock · {p.stock.length}</div>
-                    <Stack deep={p.stock.length > 1} mini>
+                    <div className="lbl text-[0.62rem] sm:text-xs">Stockpile</div>
+                    <StockPile count={p.stock.length} mini>
                       <Card value={top(p.stock)} mini />
-                    </Stack>
+                    </StockPile>
                   </div>
                   <div>
                     <div className="lbl text-[0.62rem] sm:text-xs">Discards</div>
@@ -273,12 +270,10 @@ export function GameBoard({ game: g, mySeat, canAct, onMove, onToast, actions, o
           </div>
           <div className="flex flex-wrap items-start gap-[clamp(0.8rem,3vw,2.2rem)]">
             <div>
-              <div className="lbl mb-3.5">
-                Stock · <b className="text-white">{me.stock.length}</b>
-              </div>
-              <Stack deep={me.stock.length > 1}>
+              <div className="lbl mb-3.5">Stockpile</div>
+              <StockPile count={me.stock.length}>
                 <Card value={top(me.stock)} {...srcProps("stock")} />
-              </Stack>
+              </StockPile>
             </div>
             <div>
               <div className="lbl mb-3.5">Discards</div>

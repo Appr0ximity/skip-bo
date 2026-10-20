@@ -15,7 +15,6 @@ async function main() {
   const store = await import("../src/lib/data/store");
   const { buildRecord } = await import("../src/lib/data/stats");
   const { nextMove } = await import("../src/lib/game/ai");
-  const { isBotSeat } = await import("../src/lib/game/engine");
   type GameState = import("../src/lib/game/engine").GameState;
 
   const { auth: a, rtdb: db } = fb();
@@ -47,12 +46,12 @@ async function main() {
   const roomVal = async (code: string) => (await rtdb.get(rtdb.ref(db, `rooms/${code}`))).val() as import("../src/lib/online/rooms").Room;
 
   await as("alice");
-  const code = await rooms.createRoom(acct("alice"), { stockSize: 5, bots: 1, botDifficulty: "easy" });
+  const code = await rooms.createRoom(acct("alice"), { stockSize: 5 });
   console.log("room", code);
 
   await as("bob");
   await rooms.joinRoom(code, acct("bob"));
-  await expectDenied("non-host changes settings", rooms.updateSettings(code, { stockSize: 9, bots: 0, botDifficulty: "hard" }));
+  await expectDenied("non-host changes settings", rooms.updateSettings(code, { stockSize: 9 }));
   await expectDenied("member edits another member", rtdb.set(rtdb.ref(db, `rooms/${code}/members/${users.alice.uid}/name`), "hacked"));
   await expectDenied("non-host starts game", rtdb.update(rtdb.ref(db, `rooms/${code}`), { status: "playing" }));
 
@@ -64,18 +63,13 @@ async function main() {
   await expectDenied("joining a started game", rtdb.set(rtdb.ref(db, `rooms/${code}/members/${users.mallory.uid}`), { name: "mallory", joinedAt: Date.now() }));
   await expectDenied("non-member writes game", rtdb.set(rtdb.ref(db, `rooms/${code}/game/version`), 999));
 
-  // Play the game out: each human moves on their turn; alice's client drives the bot.
+  // Play the game out: each player moves on their own turn.
   let moves = 0, wrongTurnChecked = false;
   for (let i = 0; i < 5000; i++) {
     const room = await roomVal(code);
     const g = JSON.parse(room.game!.state) as GameState;
     if (g.winner != null) break;
     const p = g.players[g.current];
-    if (isBotSeat(p)) {
-      await as("alice");
-      if (!(await rooms.botStep(code))) throw new Error("botStep failed");
-      continue;
-    }
     const name = Object.keys(users).find((n) => users[n].uid === p.uid)!;
     if (!wrongTurnChecked) {
       const other = name === "alice" ? "bob" : "alice";
@@ -93,13 +87,13 @@ async function main() {
   const final = await roomVal(code);
   const g = JSON.parse(final.game!.state) as GameState;
   if (g.winner == null) throw new Error("game did not finish");
-  console.log(`  ✓ game finished after ${moves} human moves, version ${final.game!.version}; winner ${g.players[g.winner].name}`);
+  console.log(`  ✓ game finished after ${moves} moves, version ${final.game!.version}; winner ${g.players[g.winner].name}`);
 
   // Each player records their own result — twice, to prove it's idempotent.
   for (const n of ["alice", "bob"]) {
     await as(n);
     const seat = g.players.findIndex((p) => p.uid === users[n].uid);
-    const rec = buildRecord(g, seat, { mode: "online" });
+    const rec = buildRecord(g, seat);
     await store.recordGame(acct(n), rec);
     await store.recordGame(acct(n), rec);
     const prof = await store.loadProfile(acct(n));
@@ -107,9 +101,19 @@ async function main() {
     console.log(`  ✓ ${n}: ${prof.stats.wins}W ${prof.stats.losses}L recorded once`);
   }
   await as("mallory");
-  await expectDenied("writing someone else's stats", store.recordGame(acct("alice"), { ...buildRecord(g, 0, { mode: "online" }), id: "forged" }));
+  await expectDenied("writing someone else's stats", store.recordGame(acct("alice"), { ...buildRecord(g, 0), id: "forged" }));
   const board = await store.loadLeaderboard();
   console.log("  ✓ leaderboard:", board.filter((r) => [users.alice.uid, users.bob.uid].includes(r.uid)).map((r) => `${r.name} ${r.stats.wins}W`).join(", "));
+
+  // Second round: bob leaves mid-game, so alice (the only one left) wins.
+  await as("alice");
+  await rooms.backToLobby(code);
+  await rooms.startOnlineGame(code, await roomVal(code));
+  await as("bob");
+  await rooms.removeFromGame(code, (JSON.parse((await roomVal(code)).game!.state) as GameState).players.findIndex((p) => p.uid === users.bob.uid), "left the game");
+  const g2 = JSON.parse((await roomVal(code)).game!.state) as GameState;
+  if (g2.winner == null || g2.players[g2.winner].uid !== users.alice.uid) throw new Error("leaver's opponent did not win");
+  console.log("  ✓ when bob left, alice won by default");
 
   // Host returns everyone to the lobby, then both leave; the room is deleted.
   await as("alice");

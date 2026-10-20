@@ -17,7 +17,9 @@ export function ResultModal({ game: g, mySeat, durationMs, children }: { game: G
       </h2>
       <p className="mt-1 mb-4 text-muted">
         {won
-          ? `Stockpile cleared in ${me.stats.turns} turns (${fmtDur(durationMs)}).`
+          ? me.stock.length
+            ? "Everyone else left, so you win by default."
+            : `Stockpile cleared in ${me.stats.turns} turn${me.stats.turns === 1 ? "" : "s"} (${fmtDur(durationMs)}).`
           : `You had ${me.stock.length} card${me.stock.length === 1 ? "" : "s"} left in your stockpile.`}
       </p>
       <table className="w-full text-sm">

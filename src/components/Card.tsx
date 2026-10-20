@@ -60,12 +60,12 @@ export function Card({ value, as, mini, label, selected, hinted, className = "",
   );
 }
 
-export function CardBack({ count, muted }: { count: number; muted?: boolean }) {
+export function CardBack({ count, muted }: { count?: number; muted?: boolean }) {
   return (
     <div
       className={`${base} ${ring} border-white bg-[repeating-linear-gradient(45deg,#d23a2a_0_6px,#b52a1d_6px_12px)] text-white shadow-[0_4px_10px_rgb(0_0_0/0.28)] before:opacity-50 ${muted ? "brightness-90 saturate-25" : ""}`}
     >
-      <span className="relative rounded-full bg-black/55 px-2 text-[calc(var(--cw)*0.2)]">{count}</span>
+      {count != null && <span className="relative rounded-full bg-black/55 px-2 text-[calc(var(--cw)*0.2)]">{count}</span>}
     </div>
   );
 }
@@ -81,6 +81,27 @@ export function Stack({ deep, mini, children }: { deep: boolean; mini?: boolean;
           <div className={`${layer} translate-x-0.5 translate-y-0.5`} />
         </>
       )}
+      <div className="relative">{children}</div>
+    </div>
+  );
+}
+
+/** A player's stockpile: face-down cards stacked underneath with the top card face up.
+ * The pile gets visibly thinner as it shrinks — there's no number. */
+export function StockPile({ count, mini, children }: { count: number; mini?: boolean; children: React.ReactNode }) {
+  const layers = count > 1 ? Math.min(mini ? 6 : 10, Math.ceil((count - 1) / 3)) : 0;
+  const step = mini ? 1.5 : 2.5; // px offset per face-down layer
+  const pad = layers * step;
+  return (
+    <div className={`relative w-max ${mini ? "[--cw:var(--mw)]" : ""}`} style={{ paddingRight: pad, paddingBottom: pad }}>
+      {Array.from({ length: layers }, (_, k) => {
+        const off = (layers - k) * step; // deepest card first
+        return (
+          <div key={k} aria-hidden className="absolute top-0 left-0" style={{ transform: `translate(${off}px, ${off}px)` }}>
+            <CardBack />
+          </div>
+        );
+      })}
       <div className="relative">{children}</div>
     </div>
   );

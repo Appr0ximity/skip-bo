@@ -7,7 +7,7 @@
  *                   game: { state: <GameState JSON>, version } }
  *
  * Every move runs in a transaction against the latest state, so two clients can
- * never apply conflicting moves. Bots are driven by one connected human's browser. */
+ * never apply conflicting moves. */
 
 import {
   get,
@@ -21,18 +21,14 @@ import {
   type Unsubscribe,
 } from "firebase/database";
 import { fb } from "../firebase";
-import { addLog, applyMove, createGame, isBotSeat, shuffle, type Difficulty, type GameState, type Move } from "../game/engine";
-import { nextMove } from "../game/ai";
+import { applyMove, createGame, leaveSeat, type GameState, type Move } from "../game/engine";
 import type { Account } from "../data/store";
 
 export const MAX_SEATS = 6;
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O/1/I
-const BOT_NAMES = ["Ada", "Bruno", "Cleo", "Dmitri", "Esme", "Felix", "Greta", "Hugo"];
 
 export interface RoomSettings {
   stockSize: number;
-  bots: number;
-  botDifficulty: Difficulty;
 }
 
 export interface Member {
@@ -94,8 +90,7 @@ export async function joinRoom(code: string, a: Account): Promise<void> {
     return;
   }
   if (room.status !== "waiting") throw new Error("That game has already started.");
-  const humans = Object.keys(room.members ?? {}).length;
-  if (humans + room.settings.bots >= MAX_SEATS) throw new Error("That lobby is full.");
+  if (Object.keys(room.members ?? {}).length >= MAX_SEATS) throw new Error("That lobby is full.");
   await set(ref(fb().rtdb, `rooms/${code}/members/${a.uid}`), { name: a.name, joinedAt: Date.now(), online: true });
 }
 
@@ -132,16 +127,11 @@ export async function updateSettings(code: string, patch: Partial<RoomSettings>)
 }
 
 export async function startOnlineGame(code: string, room: Room): Promise<void> {
-  const humans = sortedMembers(room);
-  const bots = Math.min(room.settings.bots, MAX_SEATS - humans.length);
-  if (humans.length + bots < 2) throw new Error("Need at least 2 players — invite a friend or add a bot.");
-  const names = shuffle(BOT_NAMES.filter((n) => !humans.some(([, m]) => m.name === n)));
+  const players = sortedMembers(room);
+  if (players.length < 2) throw new Error("Need at least 2 players — share the invite link with a friend.");
   const g = createGame({
     stockSize: room.settings.stockSize,
-    players: [
-      ...humans.map(([uid, m]) => ({ name: m.name, isHuman: true, uid })),
-      ...Array.from({ length: bots }, (_, i) => ({ name: `${names[i]} (bot)`, isHuman: false, difficulty: room.settings.botDifficulty })),
-    ],
+    players: players.map(([uid, m]) => ({ name: m.name, uid })),
   });
   await update(roomRef(code), { status: "playing", game: { state: JSON.stringify(g), version: 1 } });
 }
@@ -169,28 +159,9 @@ export function submitMove(code: string, uid: string, mv: Move): Promise<boolean
   });
 }
 
-/** One bot move (bots and seats of players who left). */
-export function botStep(code: string): Promise<boolean> {
-  return mutateGame(code, (g) => {
-    const p = g.players[g.current];
-    if (g.winner != null || !isBotSeat(p)) return false;
-    const mv = nextMove(g, p.difficulty ?? "medium");
-    if (applyMove(g, mv)) return true;
-    // Should not happen; never let the game stall.
-    return p.hand.length ? applyMove(g, { type: "discard", hand: 0, pile: 0 }) : applyMove(g, { type: "end" });
-  });
-}
-
-/** Hand a seat to a bot — used when a player leaves or stays disconnected. */
-export function botTakeover(code: string, seat: number, reason: string): Promise<boolean> {
-  return mutateGame(code, (g) => {
-    const p = g.players[seat];
-    if (!p || !p.isHuman || p.left || g.winner != null) return false;
-    p.left = true;
-    p.difficulty = "medium";
-    addLog(g, seat, `${p.name} ${reason} — a bot plays their seat.`);
-    return true;
-  });
+/** A player leaves or is removed: their turns are skipped; the last player left wins. */
+export function removeFromGame(code: string, seat: number, reason: string): Promise<boolean> {
+  return mutateGame(code, (g) => leaveSeat(g, seat, reason));
 }
 
 /** Leave the lobby. The host role passes to the longest-waiting member; the last one out deletes the room. */
@@ -201,7 +172,7 @@ export async function leaveRoom(code: string, uid: string): Promise<void> {
   if (room.status === "playing" && room.game) {
     const g = JSON.parse(room.game.state) as GameState;
     const seat = g.players.findIndex((p) => p.uid === uid);
-    if (seat >= 0 && g.winner == null) await botTakeover(code, seat, "left the game");
+    if (seat >= 0 && g.winner == null) await removeFromGame(code, seat, "left the game");
   }
   const others = sortedMembers(room).filter(([id]) => id !== uid);
   if (room.hostUid === uid) {
@@ -210,14 +181,4 @@ export async function leaveRoom(code: string, uid: string): Promise<void> {
   } else {
     await remove(ref(fb().rtdb, `rooms/${code}/members/${uid}`));
   }
-}
-
-/** The connected human (lowest seat) whose browser runs the bots. */
-export function botDriver(g: GameState, room: Room, myUid: string): string | null {
-  for (const p of g.players) {
-    if (!p.isHuman || p.left || !p.uid) continue;
-    const m = room.members?.[p.uid];
-    if (p.uid === myUid || m?.online) return p.uid;
-  }
-  return null;
 }

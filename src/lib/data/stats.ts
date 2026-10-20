@@ -1,16 +1,12 @@
-import type { Difficulty, GameState } from "../game/engine";
+import type { GameState } from "../game/engine";
 
 export type GameResult = "win" | "loss" | "forfeit";
-export type GameMode = "solo" | "online";
 
 export interface GameRecord {
   id: string; // game id — recording is idempotent per game
   date: number;
   result: GameResult;
-  mode: GameMode;
   opponents: number;
-  humanOpponents: number;
-  difficulty: Difficulty | null; // bot difficulty, if any bots played
   stockSize: number;
   turns: number;
   durationMs: number;
@@ -42,9 +38,7 @@ export interface UserStats {
   skipBoPlayed: number;
   stockPlayed: number;
   pilesCompleted: number;
-  byDifficulty: Record<string, Tally>;
   byOpponents: Record<string, Tally>;
-  byMode: Record<string, Tally>;
 }
 
 export const emptyStats = (): UserStats => ({
@@ -62,9 +56,7 @@ export const emptyStats = (): UserStats => ({
   skipBoPlayed: 0,
   stockPlayed: 0,
   pilesCompleted: 0,
-  byDifficulty: {},
   byOpponents: {},
-  byMode: {},
 });
 
 export const normalizeStats = (s: Partial<UserStats> | undefined): UserStats => ({ ...emptyStats(), ...(s ?? {}) });
@@ -94,29 +86,18 @@ export function applyRecord(prev: UserStats, rec: GameRecord): UserStats {
     obj[k].played++;
     if (won) obj[k].won++;
   };
-  if (rec.mode === "solo" && rec.difficulty) bump(s.byDifficulty, rec.difficulty);
   bump(s.byOpponents, String(rec.opponents));
-  bump(s.byMode, rec.mode);
   return s;
 }
 
 /** Build the record for the player in `seat` once a game ends (or is forfeited). */
-export function buildRecord(
-  g: GameState,
-  seat: number,
-  opts: { mode: GameMode; result?: GameResult; durationMs?: number },
-): GameRecord {
+export function buildRecord(g: GameState, seat: number, opts: { result?: GameResult; durationMs?: number } = {}): GameRecord {
   const me = g.players[seat];
-  const others = g.players.filter((_, i) => i !== seat);
-  const bot = others.find((p) => !p.isHuman);
   return {
     id: g.id,
     date: Date.now(),
     result: opts.result ?? (g.winner === seat ? "win" : "loss"),
-    mode: opts.mode,
-    opponents: others.length,
-    humanOpponents: others.filter((p) => p.isHuman).length,
-    difficulty: bot?.difficulty ?? null,
+    opponents: g.players.length - 1,
     stockSize: g.stockSize,
     turns: me.stats.turns,
     durationMs: opts.durationMs ?? (g.finishedAt ?? Date.now()) - g.startedAt,

@@ -4,18 +4,16 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAccount } from "@/context/AccountProvider";
-import { isBotSeat, type Difficulty, type GameState, type Move } from "@/lib/game/engine";
+import type { GameState, Move } from "@/lib/game/engine";
 import { recordGame } from "@/lib/data/store";
 import { buildRecord } from "@/lib/data/stats";
 import {
   MAX_SEATS,
   backToLobby,
-  botDriver,
-  botStep,
-  botTakeover,
   joinRoom,
   leaveRoom,
   normalizeCode,
+  removeFromGame,
   sortedMembers,
   startOnlineGame,
   submitMove,
@@ -30,8 +28,6 @@ import { ResultModal } from "@/components/ResultModal";
 import { StockField } from "@/components/Dashboard";
 import { TopBar } from "@/components/TopBar";
 import { Avatar, Spinner, useConfirm, useToast } from "@/components/ui";
-
-const BOT_DELAY = 700;
 
 export default function RoomPage() {
   return (
@@ -131,21 +127,17 @@ function WaitingRoom({ code, room, uid, onExit, toast }: { code: string; room: R
   const members = sortedMembers(room);
   const s = room.settings;
   const [busy, setBusy] = useState(false);
-  const maxBots = Math.max(0, MAX_SEATS - members.length);
-  const total = members.length + Math.min(s.bots, maxBots);
+  const total = members.length;
 
   const set = (patch: Partial<RoomSettings>) => updateSettings(code, patch).catch((e) => toast(e.message));
   const link = typeof window !== "undefined" ? `${window.location.origin}/room/?code=${code}` : "";
 
-  const share = async () => {
+  const copyLink = async () => {
     try {
-      if (navigator.share) await navigator.share({ title: "Join my Skip-Bo game", text: `Lobby code ${code}`, url: link });
-      else {
-        await navigator.clipboard.writeText(link);
-        toast("Invite link copied.");
-      }
+      await navigator.clipboard.writeText(link);
+      toast("Invite link copied.");
     } catch {
-      /* share sheet dismissed */
+      toast(`Couldn't copy automatically — the link is ${link}`);
     }
   };
 
@@ -158,8 +150,8 @@ function WaitingRoom({ code, room, uid, onExit, toast }: { code: string; room: R
           <div className="mt-1 text-sm text-muted">Friends sign in, then enter this code or open your invite link.</div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button className="btn" onClick={share}>
-            Share invite link
+          <button className="btn" onClick={copyLink}>
+            Copy invite link
           </button>
           <button
             className="btn"
@@ -187,41 +179,14 @@ function WaitingRoom({ code, room, uid, onExit, toast }: { code: string; room: R
                 <span className={`text-xs ${m.online ? "text-emerald-700" : "text-muted"}`}>{m.online ? "● online" : "○ away"}</span>
               </li>
             ))}
-            {Array.from({ length: Math.min(s.bots, maxBots) }, (_, i) => (
-              <li key={`bot${i}`} className="flex items-center gap-2 rounded-lg border border-dashed border-line px-3 py-2 text-muted">
-                <span className="grid size-[26px] place-items-center rounded-full bg-paper-2 text-xs">🤖</span>
-                <span className="flex-1">Computer player</span>
-                <span className="text-xs capitalize">{s.botDifficulty}</span>
-              </li>
-            ))}
           </ul>
-          {members.length < 2 && <p className="mt-3 text-sm text-muted">Waiting for friends to join… you can also add bots.</p>}
+          {members.length < 2 && <p className="mt-3 text-sm text-muted">Waiting for friends to join… copy the invite link and send it to them.</p>}
         </div>
 
         <div className="panel">
           <h2 className="mb-3 font-display text-xl font-semibold">Game settings</h2>
           {!isHost && <p className="mb-3 text-sm text-muted">Only the host can change these.</p>}
           <StockField value={s.stockSize} onChange={(v) => set({ stockSize: Math.max(5, Math.min(50, Math.round(v) || 30)) })} disabled={!isHost} />
-          <div className="mt-3 flex gap-3">
-            <label className="flex-1 text-sm font-semibold">
-              Bots
-              <select className="field" value={Math.min(s.bots, maxBots)} disabled={!isHost} onChange={(e) => set({ bots: Number(e.target.value) })}>
-                {Array.from({ length: maxBots + 1 }, (_, n) => (
-                  <option key={n} value={n}>
-                    {n}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex-1 text-sm font-semibold">
-              Bot difficulty
-              <select className="field" value={s.botDifficulty} disabled={!isHost} onChange={(e) => set({ botDifficulty: e.target.value as Difficulty })}>
-                <option value="easy">Easy</option>
-                <option value="medium">Medium</option>
-                <option value="hard">Hard</option>
-              </select>
-            </label>
-          </div>
           <div className="mt-5 flex flex-wrap gap-2">
             <button
               className="btn bg-transparent"
@@ -264,7 +229,6 @@ function WaitingRoom({ code, room, uid, onExit, toast }: { code: string; room: R
 function OnlineGame({ code, room, uid, onExit, toast }: { code: string; room: Room; uid: string; onExit: () => void; toast: (m: string) => void }) {
   const confirm = useConfirm();
   const [pending, setPending] = useState(false);
-  const version = room.game!.version;
   const raw = room.game!.state;
   const g = useMemo(() => JSON.parse(raw) as GameState, [raw]);
   const mySeat = g.players.findIndex((p) => p.uid === uid);
@@ -272,23 +236,16 @@ function OnlineGame({ code, room, uid, onExit, toast }: { code: string; room: Ro
   const isHost = room.hostUid === uid;
   const recorded = useRef<string | null>(null);
 
-  // Record my result once the game ends.
+  // Record my result once: a forfeit if I was removed, otherwise win/loss when the game ends.
+  // (recordGame ignores a second call for the same game.)
   useEffect(() => {
-    if (g.winner == null || mySeat < 0 || me.left || recorded.current === g.id) return;
+    if (mySeat < 0 || recorded.current === g.id) return;
+    if (!me.left && g.winner == null) return;
     recorded.current = g.id;
-    recordGame({ uid, name: me.name }, buildRecord(g, mySeat, { mode: "online" })).catch(() =>
+    recordGame({ uid, name: me.name }, buildRecord(g, mySeat, me.left ? { result: "forfeit" } : {})).catch(() =>
       toast("Couldn't save this result — check your connection."),
     );
   }, [g, mySeat, me, uid, toast]);
-
-  // If my browser is the bot driver, play bot turns.
-  const driver = botDriver(g, room, uid);
-  const botTurn = g.winner == null && isBotSeat(g.players[g.current]);
-  useEffect(() => {
-    if (!botTurn || driver !== uid) return;
-    const t = setTimeout(() => botStep(code).catch(() => {}), BOT_DELAY);
-    return () => clearTimeout(t);
-  }, [botTurn, driver, uid, code, version]);
 
   if (mySeat < 0) return <Notice title="Game in progress">This game started before you joined. Wait for the next one.</Notice>;
 
@@ -308,11 +265,11 @@ function OnlineGame({ code, room, uid, onExit, toast }: { code: string; room: Ro
   const leave = () =>
     confirm({
       title: "Leave this game?",
-      body: "It counts as a forfeit (a loss), and a bot takes over your seat.",
+      body: "It counts as a forfeit (a loss). The others keep playing without you.",
       okLabel: "Leave game",
       danger: true,
       onOk: async () => {
-        if (g.winner == null && !me.left) await recordGame({ uid, name: me.name }, buildRecord(g, mySeat, { mode: "online", result: "forfeit" }));
+        if (g.winner == null && !me.left) await recordGame({ uid, name: me.name }, buildRecord(g, mySeat, { result: "forfeit" }));
         await leaveRoom(code, uid);
         onExit();
       },
@@ -322,7 +279,7 @@ function OnlineGame({ code, room, uid, onExit, toast }: { code: string; room: Ro
     <>
       {me.left && (
         <div className="mx-auto mt-4 max-w-[1280px] rounded-xl bg-amber-100 p-3 text-sm text-amber-900">
-          A bot took over your seat because you were away. You can keep watching; this game counted as a forfeit for you.
+          You were removed from this game while you were away, so it counted as a forfeit. You can keep watching.
         </div>
       )}
       <GameBoard
@@ -335,20 +292,21 @@ function OnlineGame({ code, room, uid, onExit, toast }: { code: string; room: Ro
         waitingLabel="Sending move…"
         opponentExtra={(seat) => {
           const p = g.players[seat];
-          if (!p.isHuman || p.left || online[seat] || g.winner != null) return null;
+          if (p.left || online[seat] || g.winner != null) return null;
           return (
             <button
               className="btn btn-ghost btn-sm mt-2 w-full text-xs"
               onClick={() =>
                 confirm({
-                  title: `Replace ${p.name} with a bot?`,
-                  body: `${p.name} seems to be disconnected. A bot will play their seat for the rest of this game.`,
-                  okLabel: "Replace with bot",
-                  onOk: () => botTakeover(code, seat, "was disconnected").then(() => undefined),
+                  title: `Remove ${p.name} from the game?`,
+                  body: `${p.name} seems to be disconnected. Their turns will be skipped for the rest of this game, and it counts as a forfeit for them.`,
+                  okLabel: "Remove",
+                  danger: true,
+                  onOk: () => removeFromGame(code, seat, "was removed (disconnected)").then(() => undefined),
                 })
               }
             >
-              Replace with bot
+              Remove from game
             </button>
           );
         }}

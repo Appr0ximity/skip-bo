@@ -1,6 +1,6 @@
 # Skip-Bo Online
 
-Skip-Bo in the browser: play against computer opponents or create a lobby and play with friends. Accounts, stats and history sync across devices.
+Skip-Bo in the browser for 2–6 friends: create a lobby, share the invite link, and play live. Accounts, stats and history sync across devices.
 
 - **Next.js 16 + Tailwind CSS 4**, exported as a fully static site (`out/`) — no server to run or pay for.
 - **Firebase (free Spark plan)**
@@ -12,11 +12,11 @@ Skip-Bo in the browser: play against computer opponents or create a lobby and pl
 
 ```
 src/lib/game/engine.ts     rules engine (pure functions over JSON state)
-src/lib/game/ai.ts         computer opponents (easy / medium / hard)
+src/lib/game/ai.ts         move suggestions for the Hint button
 src/lib/data/              stats math + Firestore / localStorage storage
-src/lib/online/rooms.ts    lobbies, presence, moves, bot driving (Realtime Database)
+src/lib/online/rooms.ts    lobbies, presence, moves, leaving (Realtime Database)
 src/components/            GameBoard, cards, dashboard, sign-in screen
-src/app/                   routes: /  (home)  /play/  (solo)  /room/?code=XXXXX  (online)
+src/app/                   routes: /  (home)  /room/?code=XXXXX  (lobby + game)
 firestore.rules            who may read/write profiles and history
 database.rules.json        who may create/join lobbies and write game state
 scripts/                   emulator test + a scripted "friend" for local testing
@@ -100,7 +100,6 @@ Consequences:
 ## Known trade-offs
 
 - **Rules run in players' browsers.** The database rules stop obvious abuse (writing someone else's stats, acting in a lobby you're not in, joining a started game, non-hosts changing settings), but a determined player using developer tools could peek at hidden cards or forge their own stats. Fine for friends; a cheat-proof version would need server-side code (Cloud Functions, paid plan).
-- **Bots in online games** are driven by one connected player's browser. If everyone disconnects, the game pauses until someone returns.
-- **Disconnected players** show as offline; anyone in the game can hand their seat to a bot.
+- **Leaving:** a player who leaves forfeits, and their turns are skipped. If only one player is left, they win.
+- **Disconnected players** show as offline. The game waits on their turn; anyone in the game can remove them, which counts as a forfeit for them.
 - **Empty lobbies** are deleted when the last player leaves. Lobbies abandoned by closed tabs stay in the database (they are tiny).
-- **Solo games in progress** are saved in the browser they were started in; finished results sync to the account.

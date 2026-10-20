@@ -3,24 +3,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAccount } from "@/context/AccountProvider";
-import type { Difficulty } from "@/lib/game/engine";
-import { dealSolo } from "@/lib/game/solo";
-import {
-  DEFAULT_PREFS,
-  loadLeaderboard,
-  loadProfile,
-  recordGame,
-  savePrefs,
-  solo,
-  type LeaderRow,
-  type Prefs,
-  type SavedSolo,
-} from "@/lib/data/store";
-import { buildRecord, fmtDur, pct, type GameRecord, type UserStats } from "@/lib/data/stats";
+import { DEFAULT_PREFS, loadLeaderboard, loadProfile, savePrefs, type LeaderRow, type Prefs } from "@/lib/data/store";
+import { fmtDur, pct, type GameRecord, type UserStats } from "@/lib/data/stats";
 import { createRoom, joinRoom, normalizeCode } from "@/lib/online/rooms";
 import { Modal, useConfirm, useToast } from "./ui";
 
-const DIFFS: Difficulty[] = ["easy", "medium", "hard"];
 const cap = (s?: string | null) => (s ? s[0].toUpperCase() + s.slice(1) : "");
 
 export function Dashboard() {
@@ -32,7 +19,6 @@ export function Dashboard() {
   const [history, setHistory] = useState<GameRecord[]>([]);
   const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS);
   const [board, setBoard] = useState<LeaderRow[] | null>(null);
-  const [saved, setSaved] = useState<SavedSolo | null>(null);
   const [showRules, setShowRules] = useState(false);
   const [joinCode, setJoinCode] = useState("");
   const [busy, setBusy] = useState(false);
@@ -40,7 +26,6 @@ export function Dashboard() {
 
   const refresh = useCallback(async () => {
     if (!account) return;
-    setSaved(solo.load(account.uid));
     try {
       const p = await loadProfile(account);
       setStats(p.stats);
@@ -56,41 +41,18 @@ export function Dashboard() {
   }, [account]);
 
   useEffect(() => {
-    // Initial load from Firestore / localStorage.
+    // Initial load from Firestore.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     refresh();
   }, [refresh]);
 
   if (!account) return null;
   const s = stats;
-  const inProgress = saved && saved.game.winner == null ? saved : null;
-
-  const startSolo = async (p: Prefs) => {
-    const go = () => {
-      const game = dealSolo(account, p);
-      solo.save(account.uid, { game, settings: p, elapsedMs: 0 });
-      savePrefs(account, p);
-      router.push("/play/");
-    };
-    if (inProgress) {
-      confirm({
-        title: "Start a new game?",
-        body: "Your game in progress will be recorded as a forfeit (a loss).",
-        okLabel: "Forfeit & deal",
-        danger: true,
-        onOk: async () => {
-          await recordGame(account, buildRecord(inProgress.game, 0, { mode: "solo", result: "forfeit", durationMs: inProgress.elapsedMs }));
-          solo.clear(account.uid);
-          go();
-        },
-      });
-    } else go();
-  };
-
   const createLobby = async () => {
     setBusy(true);
     try {
-      const code = await createRoom(account, { stockSize: prefs.stockSize, bots: 0, botDifficulty: prefs.difficulty });
+      savePrefs(account, { stockSize: prefs.stockSize });
+      const code = await createRoom(account, { stockSize: prefs.stockSize });
       router.push(`/room/?code=${code}`);
     } catch (e) {
       toast(e instanceof Error ? e.message : "Could not create a lobby.");
@@ -141,65 +103,44 @@ export function Dashboard() {
 
       {loadErr && <div className="rounded-xl bg-red-100 p-3 text-sm text-red-800">{loadErr}</div>}
 
-      {inProgress && (
-        <div className="panel flex flex-wrap items-center justify-between gap-3 border-l-4 border-sb-from">
-          <div>
-            <b>Solo game in progress</b>
-            <span className="text-muted">
-              {" "}
-              · turn {inProgress.game.turn} · {inProgress.game.players.length - 1} opponent{inProgress.game.players.length > 2 ? "s" : ""} · {cap(inProgress.settings.difficulty)} · your stockpile{" "}
-              {inProgress.game.players[0].stock.length}/{inProgress.game.stockSize}
-            </span>
-          </div>
-          <button className="btn btn-primary" onClick={() => router.push("/play/")}>
-            Resume game
-          </button>
-        </div>
-      )}
-
       <div className="grid items-start gap-5 md:grid-cols-2">
-        <SoloForm prefs={prefs} onStart={startSolo} onRules={() => setShowRules(true)} inProgress={!!inProgress} />
-
         <div className="panel">
           <h2 className="mb-1 font-display text-xl font-semibold">Play with friends</h2>
-          <>
-              <p className="mb-4 text-sm text-muted">Create a lobby and share the code, or join a friend&apos;s lobby. You can fill empty seats with bots.</p>
-              <button className="btn btn-primary w-full py-3" onClick={createLobby} disabled={busy}>
-                Create lobby
-              </button>
-              <form
-                className="mt-4 flex gap-2"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  join();
-                }}
-              >
-                <input
-                  className="field mt-0 font-mono tracking-[0.3em] uppercase"
-                  placeholder="CODE"
-                  value={joinCode}
-                  onChange={(e) => setJoinCode(normalizeCode(e.target.value))}
-                  aria-label="Lobby code"
-                />
-                <button className="btn flex-none" disabled={busy} type="submit">
-                  Join
-                </button>
-              </form>
-          </>
+          <p className="mb-4 text-sm text-muted">Create a lobby and send your friends the invite link, or join a friend&apos;s lobby with their code. 2–6 players.</p>
+          <StockField value={prefs.stockSize} onChange={(v) => setPrefs({ stockSize: Math.max(5, Math.min(50, Math.round(v) || 30)) })} />
+          <button className="btn btn-primary mt-4 w-full py-3" onClick={createLobby} disabled={busy}>
+            Create lobby
+          </button>
+          <form
+            className="mt-4 flex gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              join();
+            }}
+          >
+            <input
+              className="field mt-0 font-mono tracking-[0.3em] uppercase"
+              placeholder="CODE"
+              value={joinCode}
+              onChange={(e) => setJoinCode(normalizeCode(e.target.value))}
+              aria-label="Lobby code"
+            />
+            <button className="btn flex-none" disabled={busy} type="submit">
+              Join
+            </button>
+          </form>
+          <button type="button" className="mt-3 cursor-pointer text-sm text-card-blue" onClick={() => setShowRules(true)}>
+            How to play
+          </button>
         </div>
+        <StatsPanel s={s} />
       </div>
 
       <div className="grid items-start gap-5 md:grid-cols-2">
-        <StatsPanel s={s} />
         <div className="panel">
           <h2 className="mb-3 font-display text-xl font-semibold">Breakdown</h2>
-          <TallyTable title="Solo difficulty" obj={s?.byDifficulty} keys={DIFFS} label={cap} />
-          <TallyTable title="Mode" obj={s?.byMode} keys={["solo", "online"]} label={(k) => (k === "solo" ? "vs computer" : "Online")} />
           <TallyTable title="Opponents" obj={s?.byOpponents} keys={["1", "2", "3", "4", "5"]} label={(k) => k} hideEmpty />
         </div>
-      </div>
-
-      <div className="grid items-start gap-5 md:grid-cols-2">
         <div className="panel">
           <h2 className="mb-3 font-display text-xl font-semibold">Leaderboard</h2>
           {!board ? (
@@ -268,7 +209,7 @@ export function Dashboard() {
             <table className="w-full text-sm whitespace-nowrap">
               <thead>
                 <tr className="text-left text-xs tracking-wide text-muted uppercase">
-                  {["Date", "Result", "Mode", "Opp.", "Bots", "Stock", "Turns", "Time", "Cards", "Stock left"].map((h) => (
+                  {["Date", "Result", "Opponents", "Stockpile", "Turns", "Time", "Cards", "Stock left"].map((h) => (
                     <th key={h} className="p-2">
                       {h}
                     </th>
@@ -286,9 +227,7 @@ export function Dashboard() {
                         {cap(h.result)}
                       </span>
                     </td>
-                    <td className="p-2">{h.mode === "online" ? `Online${h.humanOpponents ? ` · ${h.humanOpponents} friend${h.humanOpponents > 1 ? "s" : ""}` : ""}` : "Solo"}</td>
                     <td className="p-2">{h.opponents}</td>
-                    <td className="p-2">{cap(h.difficulty) || "—"}</td>
                     <td className="p-2">{h.stockSize}</td>
                     <td className="p-2">{h.turns}</td>
                     <td className="p-2">{fmtDur(h.durationMs)}</td>
@@ -306,57 +245,6 @@ export function Dashboard() {
 
       <RulesModal open={showRules} onClose={() => setShowRules(false)} />
     </div>
-  );
-}
-
-function SoloForm({ prefs, onStart, onRules, inProgress }: { prefs: Prefs; onStart: (p: Prefs) => void; onRules: () => void; inProgress: boolean }) {
-  const [p, setP] = useState(prefs);
-  const [prev, setPrev] = useState(prefs);
-  if (prev !== prefs) {
-    setPrev(prefs);
-    setP(prefs);
-  }
-  const setStock = (v: number) => setP({ ...p, stockSize: Math.max(5, Math.min(50, Math.round(v) || 30)) });
-  return (
-    <form
-      className="panel"
-      onSubmit={(e) => {
-        e.preventDefault();
-        onStart(p);
-      }}
-    >
-      <h2 className="mb-3 font-display text-xl font-semibold">Play vs computer</h2>
-      <StockField value={p.stockSize} onChange={setStock} />
-      <div className="mt-3 flex gap-3">
-        <label className="flex-1 text-sm font-semibold">
-          Opponents
-          <select className="field" value={p.opponents} onChange={(e) => setP({ ...p, opponents: Number(e.target.value) })}>
-            {[1, 2, 3, 4].map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex-1 text-sm font-semibold">
-          Difficulty
-          <select className="field" value={p.difficulty} onChange={(e) => setP({ ...p, difficulty: e.target.value as Difficulty })}>
-            {DIFFS.map((d) => (
-              <option key={d} value={d}>
-                {cap(d)}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-      <p className="my-3 text-sm text-muted">4 building piles · 4 discard piles each · 5-card hand</p>
-      <button className="btn btn-primary w-full py-3 text-[1.05rem]" type="submit">
-        {inProgress ? "New game (forfeits current)" : "Deal cards"}
-      </button>
-      <button type="button" className="mt-2 cursor-pointer text-sm text-card-blue" onClick={onRules}>
-        How to play
-      </button>
-    </form>
   );
 }
 
