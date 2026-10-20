@@ -23,7 +23,7 @@ import {
   type Room,
   type RoomSettings,
 } from "@/lib/online/rooms";
-import { ChatPanel } from "@/components/ChatPanel";
+import { ChatFab, ChatOverlay, ChatToggle, DockedChat, useChat, useIsLarge, type Chat } from "@/components/ChatPanel";
 import { GameBoard } from "@/components/GameBoard";
 import { ResultModal } from "@/components/ResultModal";
 import { StockField } from "@/components/Dashboard";
@@ -72,14 +72,15 @@ function RoomInner() {
 
   if (loading) return <Spinner />;
 
-  const shell = (body: React.ReactNode) => (
+  const shell = (body: React.ReactNode, opts?: { game?: boolean }) => (
     <>
       <TopBar>
         <Link href="/" className="btn btn-ghost btn-sm">
           Lobby
         </Link>
       </TopBar>
-      <main className="px-4 pb-24">{body}</main>
+      {/* The game screen is sized to fit the window; other screens leave room for the chat button. */}
+      <main className={opts?.game ? "px-3 sm:px-4" : "px-4 pb-24"}>{body}</main>
     </>
   );
 
@@ -100,17 +101,33 @@ function RoomInner() {
   if (room === null) return shell(<Notice title="This lobby has closed">Everyone left, so it was removed. Create a new one from the home page.</Notice>);
   if (!room.members?.[account.uid]) return shell(<Notice title="You're not in this lobby">You left or the game started without you.</Notice>);
 
-  // The chat sits outside the lobby/game switch so it stays open when a game starts.
+  return <Member code={code} room={room} account={account} onExit={() => router.push("/")} toast={toast} shell={shell} />;
+}
+
+/** A member's view of the room. Chat state lives here so it carries over from lobby to game. */
+function Member({
+  code,
+  room,
+  account,
+  onExit,
+  toast,
+  shell,
+}: {
+  code: string;
+  room: Room;
+  account: { uid: string; name: string };
+  onExit: () => void;
+  toast: (m: string) => void;
+  shell: (body: React.ReactNode, opts?: { game?: boolean }) => React.ReactNode;
+}) {
+  const chat = useChat(code, account);
+  if (room.status === "playing" && room.game) {
+    return shell(<OnlineGame code={code} room={room} uid={account.uid} onExit={onExit} toast={toast} chat={chat} />, { game: true });
+  }
   return (
     <>
-      {shell(
-        room.status === "playing" && room.game ? (
-          <OnlineGame code={code} room={room} uid={account.uid} onExit={() => router.push("/")} toast={toast} />
-        ) : (
-          <WaitingRoom code={code} room={room} uid={account.uid} onExit={() => router.push("/")} toast={toast} />
-        ),
-      )}
-      <ChatPanel code={code} account={account} />
+      {shell(<WaitingRoom code={code} room={room} uid={account.uid} onExit={onExit} toast={toast} />)}
+      <ChatFab chat={chat} />
     </>
   );
 }
@@ -233,7 +250,8 @@ function WaitingRoom({ code, room, uid, onExit, toast }: { code: string; room: R
 
 /* ---------------- live game ---------------- */
 
-function OnlineGame({ code, room, uid, onExit, toast }: { code: string; room: Room; uid: string; onExit: () => void; toast: (m: string) => void }) {
+function OnlineGame({ code, room, uid, onExit, toast, chat }: { code: string; room: Room; uid: string; onExit: () => void; toast: (m: string) => void; chat: Chat }) {
+  const isLarge = useIsLarge();
   const confirm = useConfirm();
   const [pending, setPending] = useState(false);
   const raw = room.game!.state;
@@ -317,14 +335,19 @@ function OnlineGame({ code, room, uid, onExit, toast }: { code: string; room: Ro
             </button>
           );
         }}
+        side={isLarge ? <DockedChat chat={chat} /> : null}
         actions={
-          g.winner == null && (
-            <button className="btn btn-ghost btn-sm" onClick={leave}>
-              Leave game
-            </button>
-          )
+          <>
+            {!isLarge && <ChatToggle chat={chat} />}
+            {g.winner == null && (
+              <button className="btn btn-ghost btn-sm" onClick={leave}>
+                Leave game
+              </button>
+            )}
+          </>
         }
       />
+      {!isLarge && <ChatOverlay chat={chat} />}
       <ResultModal game={g} mySeat={mySeat} durationMs={(g.finishedAt ?? g.startedAt) - g.startedAt}>
         <button
           className="btn bg-transparent"

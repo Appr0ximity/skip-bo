@@ -44,20 +44,32 @@
 
 /* Card size scale. Components size themselves from --cw (card width). */
 :root {
-  --cw: clamp(46px, 6.2vw, 80px);
+  --cw-w: clamp(46px, 6.2vw, 80px); /* card width from the window width */
+  --cw: var(--cw-w);
   --mw: clamp(28px, 3.2vw, 40px);
   --fan: calc(var(--cw) * 0.36);
   color-scheme: light;
 }
 @media (max-width: 760px) {
   :root {
-    --cw: clamp(42px, 13vw, 60px);
+    --cw-w: clamp(42px, 13vw, 60px);
+    --cw: var(--cw-w);
     --mw: clamp(22px, 6vw, 30px);
   }
 }
 @media (max-width: 420px) {
   :root {
     --fan: calc(var(--cw) * 0.3);
+  }
+}
+
+/* Game screen: card width also limited by window height (vars set by GameBoard). */
+.game-fit {
+  --cw-h: calc((100dvh - var(--fixed-xs)) / var(--rows-xs));
+}
+@media (min-width: 640px) {
+  .game-fit {
+    --cw-h: calc((100dvh - var(--fixed-sm)) / var(--rows-sm));
   }
 }
 

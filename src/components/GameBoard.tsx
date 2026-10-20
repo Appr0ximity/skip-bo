@@ -21,12 +21,14 @@ interface Props {
   actions?: ReactNode;
   /** seat → connected? (online games) */
   online?: Record<number, boolean>;
+  /** Desktop side column (the chat). */
+  side?: ReactNode;
   /** Extra controls in an opponent's header (e.g. "Remove from game"). */
   opponentExtra?: (seat: number) => ReactNode;
   waitingLabel?: string;
 }
 
-export function GameBoard({ game: g, mySeat, canAct, onMove, onToast, actions, online, opponentExtra, waitingLabel }: Props) {
+export function GameBoard({ game: g, mySeat, canAct, onMove, onToast, actions, online, side, opponentExtra, waitingLabel }: Props) {
   const [sel, setSel] = useState<Source | null>(null);
   const [dragging, setDragging] = useState(false);
   // Discard piles show only their top card; these ("seat:pile") are fanned open.
@@ -149,11 +151,12 @@ export function GameBoard({ game: g, mySeat, canAct, onMove, onToast, actions, o
     const isMe = seat === mySeat;
     const active = g.current === seat && g.winner == null;
     const showPresence = !isMe && online && !p.left;
+    const anyOpen = p.discards.some((d, i) => d.length > 1 && openPiles.has(`${seat}:${i}`));
     return (
       <section
         key={seat}
         aria-label={isMe ? "Your cards" : `${p.name}'s cards`}
-        className={`@container rounded-[20px] border bg-black/20 p-3 transition sm:px-4 sm:pt-3 sm:pb-4 ${p.left ? "opacity-50" : ""} ${active ? "border-gold shadow-[0_0_0_1px_var(--color-gold),0_0_24px_rgb(255_197_51/0.25)]" : g.winner === seat ? "border-emerald-400" : "border-white/10"}`}
+        className={`@container relative ${anyOpen ? "z-20" : ""} rounded-[20px] border bg-black/20 p-3 transition sm:px-4 sm:pt-3 sm:pb-4 ${p.left ? "opacity-50" : ""} ${active ? "border-gold shadow-[0_0_0_1px_var(--color-gold),0_0_24px_rgb(255_197_51/0.25)]" : g.winner === seat ? "border-emerald-400" : "border-white/10"}`}
       >
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <span className="grid size-6 flex-none place-items-center rounded-full bg-gold text-xs font-bold text-amber-950">{p.name[0]?.toUpperCase()}</span>
@@ -166,21 +169,29 @@ export function GameBoard({ game: g, mySeat, canAct, onMove, onToast, actions, o
           <span className="text-xs text-white/70">
             Turn {p.stats.turns} · {p.stats.cardsPlayed} cards played
           </span>
+          {!isMe && p.hand.length > 0 && (
+            // Phones: the opponent's hand as small face-down cards here instead of a full row.
+            <span className="flex gap-0.5 sm:hidden" aria-label={`${p.hand.length} cards in hand`}>
+              {p.hand.map((_, i) => (
+                <span key={i} className="h-4 w-3 rounded-[2px] border border-white bg-[repeating-linear-gradient(45deg,#d23a2a_0_3px,#b52a1d_3px_6px)]" />
+              ))}
+            </span>
+          )}
           {!isMe && opponentExtra && <span className="ml-auto">{opponentExtra(seat)}</span>}
         </div>
         {/* From tablet width up, stockpile + 5-card hand + 4 discard piles always share one row:
             cards are sized from this area's own width (≈11.9 card widths + the stockpile's
             edge), so nothing wraps. Phones keep the hand on its own row. */}
-        <div className="flex flex-wrap items-start gap-[clamp(0.8rem,3vw,2.2rem)] sm:flex-nowrap sm:gap-[calc(var(--cw)*0.35)] sm:[--cw:clamp(30px,calc((100cqw-26px)/11.9),80px)] sm:[--fan:calc(var(--cw)*0.36)]">
+        <div className="flex flex-wrap items-start gap-[clamp(0.8rem,3vw,2.2rem)] [--cw:max(28px,min(var(--cw-w),var(--cw-h)))] [--fan:calc(var(--cw)*0.36)] sm:flex-nowrap sm:gap-[calc(var(--cw)*0.35)] sm:[--cw:clamp(28px,min(calc((100cqw-26px)/11.9),var(--cw-h)),80px)]">
           <div>
-            <div className="lbl mb-3.5">Stockpile</div>
+            <div className={`lbl mb-3.5 ${isMe ? "" : "hidden sm:block"}`}>Stockpile</div>
             <StockPile count={p.stock.length}>
               <Card value={top(p.stock)} {...(isMe ? srcProps("stock") : {})} />
             </StockPile>
           </div>
           {/* Stockpile always left, discards always right; the hand follows the stockpile
               (on phones it wraps onto its own row below them). */}
-          <div className="order-last min-w-0 basis-full sm:order-none sm:ml-[calc(var(--cw)*0.3)] sm:flex-1 sm:basis-auto">
+          <div className={`min-w-0 sm:ml-[calc(var(--cw)*0.3)] sm:flex-1 ${isMe ? "order-last basis-full sm:order-none sm:basis-auto" : "hidden sm:block"}`}>
             <div className="lbl mb-3.5">Hand</div>
             <div className="flex min-h-[calc(var(--cw)*1.4)] items-center gap-[clamp(0.3rem,1vw,0.6rem)] sm:gap-[calc(var(--cw)*0.1)]">
               {p.hand.length ? (
@@ -191,20 +202,20 @@ export function GameBoard({ game: g, mySeat, canAct, onMove, onToast, actions, o
             </div>
           </div>
           <div className="ml-auto">
-            <div className="lbl mb-3.5">Discards</div>
+            <div className={`lbl mb-3.5 ${isMe ? "" : "hidden sm:block"}`}>Discards</div>
             <div className="flex gap-[clamp(0.3rem,1.2vw,0.8rem)] sm:gap-[calc(var(--cw)*0.12)]">
               {p.discards.map((d, i) => {
                 const t = `mydiscard:${i}`;
                 const key = `${seat}:${i}`;
                 const expanded = d.length > 1 && openPiles.has(key);
                 const shown = expanded ? d : d.slice(-1);
-                const n = Math.max(1, shown.length);
                 const drop = isMe ? tgtProps(t) : {};
                 return (
                   <div
                     key={i}
-                    className={`relative w-(--cw) ${d.length > 1 ? "cursor-pointer" : ""}`}
-                    style={{ height: `calc(var(--cw) * 1.4 + ${n - 1} * var(--fan))` }}
+                    // An open pile fans out over the board (yours upward, opponents' downward)
+                    // without changing the layout, so nothing needs scrolling.
+                    className={`relative h-[calc(var(--cw)*1.4)] w-(--cw) ${d.length > 1 ? "cursor-pointer" : ""} ${expanded ? "z-30" : ""}`}
                     {...drop}
                     onClick={(e) => {
                       // Discarding onto this pile takes priority; otherwise a click opens/closes the pile.
@@ -222,7 +233,7 @@ export function GameBoard({ game: g, mySeat, canAct, onMove, onToast, actions, o
                         const isTop = k === shown.length - 1;
                         const src = isMe && isTop ? srcProps(`discard:${i}`) : {};
                         return (
-                          <div key={k} className="absolute left-0" style={{ top: `calc(${k} * var(--fan))` }}>
+                          <div key={k} className="absolute left-0" style={{ top: `calc(${isMe ? k - (shown.length - 1) : k} * var(--fan))` }}>
                             <Card value={c} {...src} className={`${"className" in src ? src.className : ""} ${isMe && isTop ? tgtGlow(t) : ""}`} />
                           </div>
                         );
@@ -260,18 +271,30 @@ export function GameBoard({ game: g, mySeat, canAct, onMove, onToast, actions, o
   else if (mine) {
     if (!me.hand.length) status = "No cards left to draw — end your turn.";
     else if (sel) status = "Pick a highlighted pile (Esc to cancel).";
-    else status = <><b>Your turn.</b> Play to the building piles, then discard a hand card to end your turn.</>;
+    else status = <><b>Your turn.</b><span className="hidden sm:inline"> Play to the building piles, then discard a hand card to end your turn.</span></>;
   } else if (g.current === mySeat) status = waitingLabel ?? "Sending…";
   else status = <><span className="inline-block size-2 animate-blink rounded-full bg-gold" /><b>{g.players[g.current].name}</b> is playing…</>;
 
+  // Cards also size to the window height so the whole table fits on one screen.
+  // "fixed" is everything that isn't card height (bars, labels, padding, gaps), in px;
+  // "rows" is how many card heights are stacked. See .game-fit in globals.css.
+  const opps = order.length;
+  const oppRows = opps >= 3 ? Math.ceil(opps / 2) : opps;
+  const fit = {
+    "--fixed-sm": `${61 + 24 + 122 * (oppRows + 1) + 60 + 40 + 12 * (oppRows + 2)}px`,
+    "--rows-sm": 1.4 * (oppRows + 2),
+    "--fixed-xs": `${61 + 16 + 85 * opps + 158 + 54 + 44 + 10 * (opps + 2)}px`,
+    "--rows-xs": 1.4 * (opps + 3),
+  } as React.CSSProperties;
+
   return (
-    <div className="mx-auto grid max-w-[1280px] grid-cols-1 items-start gap-4 pt-4 lg:grid-cols-[minmax(0,1fr)_250px]" onClick={() => setSel(null)}>
-      <div className="grid min-w-0 gap-4">
-        {/* Opponents */}
-        <div className="grid gap-3">{order.map(area)}</div>
+    <div className="game-fit mx-auto grid max-w-[1280px] grid-cols-1 items-start gap-3 py-2 sm:py-3 lg:grid-cols-[minmax(0,1fr)_300px]" style={fit} onClick={() => setSel(null)}>
+      <div className="flex min-w-0 flex-col gap-2.5 sm:gap-3">
+        {/* Opponents (two per row when there are three or more) */}
+        <div className={`grid gap-2.5 sm:gap-3 ${opps >= 3 ? "sm:grid-cols-2" : ""}`}>{order.map(area)}</div>
 
         {/* Center: draw pile, building piles, completed */}
-        <div className="flex flex-wrap items-end justify-center gap-[clamp(0.8rem,3vw,2.4rem)] rounded-[20px] border border-white/5 bg-black/15 p-3 sm:flex-nowrap sm:p-4">
+        <div className="flex flex-wrap items-end justify-center gap-[clamp(0.8rem,3vw,2.4rem)] rounded-[20px] border border-white/5 bg-black/15 p-3 [--cw:max(28px,min(var(--cw-w),var(--cw-h)))] sm:flex-nowrap sm:p-4">
           <div className="hidden flex-col items-center sm:flex">
             <div className="lbl">Draw</div>
             {g.drawPile.length ? <CardBack count={g.drawPile.length} /> : <Card label="0" />}
@@ -322,20 +345,8 @@ export function GameBoard({ game: g, mySeat, canAct, onMove, onToast, actions, o
         {area(mySeat)}
       </div>
 
-      {/* Log */}
-      <aside className="max-h-[220px] overflow-auto rounded-2xl border border-white/10 bg-black/20 px-4 py-3 lg:sticky lg:top-[70px] lg:max-h-[calc(100vh-110px)]">
-        <h3 className="mb-2 font-display font-semibold">Game log</h3>
-        <ol className="grid gap-1.5 text-[0.82rem]">
-          {g.log
-            .slice(-18)
-            .reverse()
-            .map((l, i) => (
-              <li key={g.log.length - i} className={`${l.p === mySeat ? "text-gold" : "text-white/80"} ${i === 0 ? "font-semibold" : ""}`}>
-                {l.t}
-              </li>
-            ))}
-        </ol>
-      </aside>
+      {/* Desktop: chat column (the game log used to be here) */}
+      {side && <aside className="sticky top-[73px] hidden h-[calc(100dvh-85px)] min-h-0 lg:block">{side}</aside>}
     </div>
   );
 }
