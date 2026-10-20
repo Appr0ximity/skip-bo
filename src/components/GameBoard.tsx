@@ -97,6 +97,12 @@ export function GameBoard({ game: g, mySeat, canAct, onMove, onToast, actions, o
           draggable: true,
           onClick: (e: React.MouseEvent) => {
             e.stopPropagation();
+            // With a hand card selected, clicking a discard pile's top card means "discard here",
+            // not "pick up this card".
+            if (sel?.type === "hand" && k.startsWith("discard:")) {
+              const t = `mydiscard:${k.split(":")[1]}`;
+              if (targets.has(t)) return clickTarget(t);
+            }
             clickSource(k);
           },
           onDoubleClick: () => autoPlay(k),
