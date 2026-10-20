@@ -1,5 +1,7 @@
 /* Dev helper: a second player for testing lobbies locally against the emulators.
- *   npx tsx scripts/fake-friend.ts <LOBBY_CODE> [name] [ms-between-moves]
+ *   npx tsx scripts/fake-friend.ts <LOBBY_CODE> [name] [ms-between-moves] [pin]
+ * Uses a normal username + PIN account (created if missing), so you can also sign in
+ * as this player in another browser tab to watch the game from their side.
  * Joins the lobby, stays online, and plays its own turns automatically. */
 process.env.NEXT_PUBLIC_FIREBASE_API_KEY = "demo-api-key";
 process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID = "demo-skipbo";
@@ -11,6 +13,7 @@ async function main() {
   const code = (process.argv[2] ?? "").toUpperCase();
   const name = process.argv[3] ?? "Robin";
   const delay = Number(process.argv[4] ?? 600);
+  const pin = process.argv[5] ?? "0000";
   if (!code) throw new Error("usage: fake-friend.ts <CODE> [name]");
   const { fb } = await import("../src/lib/firebase");
   const auth = await import("firebase/auth");
@@ -20,8 +23,10 @@ async function main() {
   const { nextMove } = await import("../src/lib/game/ai");
   type GameState = import("../src/lib/game/engine").GameState;
 
-  const email = `${name.toLowerCase()}.${Date.now()}@example.test`;
-  const cred = await auth.createUserWithEmailAndPassword(fb().auth, email, "test-pass-1");
+  const { loginEmail, pinPassword } = await import("../src/lib/accounts");
+  const cred = await auth
+    .signInWithEmailAndPassword(fb().auth, loginEmail(name), pinPassword(pin))
+    .catch(() => auth.createUserWithEmailAndPassword(fb().auth, loginEmail(name), pinPassword(pin)));
   const uid = cred.user.uid;
   await store.ensureCloudProfile(uid, name);
   const acct = { uid, name };
