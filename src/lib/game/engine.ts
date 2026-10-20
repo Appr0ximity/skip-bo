@@ -90,8 +90,9 @@ const newId = () => Math.random().toString(36).slice(2, 10) + Date.now().toStrin
 
 export function createGame(opts: { stockSize: number; players: PlayerSetup[]; startPlayer?: number }): GameState {
   const n = opts.players.length;
-  // Add extra decks if a large stockpile would otherwise exhaust the cards.
-  const decks = Math.max(1, Math.ceil((n * (opts.stockSize + HAND_SIZE) + 40) / DECK_SIZE));
+  // Official setups (30 each for 2–4 players, 20 for 5–6) always use one 162-card deck.
+  // Extra decks are added only when custom stockpiles plus first hands can't be dealt from one.
+  const decks = Math.max(1, Math.ceil((n * (opts.stockSize + HAND_SIZE)) / DECK_SIZE));
   const g: GameState = {
     id: newId(),
     decks,

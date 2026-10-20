@@ -9,7 +9,8 @@
     "lint": "eslint",
     "emulators": "firebase emulators:start --only auth,firestore,database --project demo-skipbo",
     "deploy": "next build && firebase deploy --only hosting,firestore:rules,database",
-    "test:online": "tsx scripts/e2e-online.ts"
+    "test:online": "tsx scripts/e2e-online.ts",
+    "test:rules": "tsx scripts/rules-check.ts"
   },
   "dependencies": {
     "firebase": "^13.0.0",
