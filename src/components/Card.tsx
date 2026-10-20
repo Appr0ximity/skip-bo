@@ -87,7 +87,7 @@ export function Stack({ deep, mini, children }: { deep: boolean; mini?: boolean;
 }
 
 /** A player's stockpile: face-down cards stacked underneath with the top card face up.
- * The pile gets visibly thinner as it shrinks — there's no number. */
+ * The pile gets visibly thinner as it shrinks, and a badge shows how many cards are left. */
 export function StockPile({ count, mini, children }: { count: number; mini?: boolean; children: React.ReactNode }) {
   const layers = count > 1 ? Math.min(mini ? 6 : 10, Math.ceil((count - 1) / 3)) : 0;
   const step = mini ? 1.5 : 2.5; // px offset per face-down layer
@@ -103,6 +103,14 @@ export function StockPile({ count, mini, children }: { count: number; mini?: boo
         );
       })}
       <div className="relative">{children}</div>
+      {count > 0 && (
+        <span
+          title={`${count} card${count === 1 ? "" : "s"} left in stockpile`}
+          className="pointer-events-none absolute -top-2 -left-2 z-20 grid h-5 min-w-5 place-items-center rounded-full bg-gold px-1.5 text-[0.7rem] font-bold text-amber-950 shadow"
+        >
+          {count}
+        </span>
+      )}
     </div>
   );
 }

@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { canPlayOn, cardName, sourceCard, top, type GameState, type Move, type Source } from "@/lib/game/engine";
-import { nextMove } from "@/lib/game/ai";
+import { canPlayOn, sourceCard, top, type GameState, type Move, type PlayerState, type Source } from "@/lib/game/engine";
 import { Card, CardBack, Stack, StockPile } from "./Card";
 
 const srcKey = (s: Source | null) => (s ? (s.type === "stock" ? "stock" : `${s.type}:${s.index}`) : "");
@@ -22,15 +21,23 @@ interface Props {
   actions?: ReactNode;
   /** seat → connected? (online games) */
   online?: Record<number, boolean>;
-  /** Extra controls under an opponent (e.g. "Replace with bot"). */
+  /** Extra controls in an opponent's header (e.g. "Remove from game"). */
   opponentExtra?: (seat: number) => ReactNode;
   waitingLabel?: string;
 }
 
 export function GameBoard({ game: g, mySeat, canAct, onMove, onToast, actions, online, opponentExtra, waitingLabel }: Props) {
   const [sel, setSel] = useState<Source | null>(null);
-  const [hint, setHint] = useState<{ src: Source; target: string } | null>(null);
   const [dragging, setDragging] = useState(false);
+  // Discard piles show only their top card; these ("seat:pile") are fanned open.
+  const [openPiles, setOpenPiles] = useState<Set<string>>(new Set());
+  const togglePile = (key: string) =>
+    setOpenPiles((cur) => {
+      const next = new Set(cur);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
 
   const me = g.players[mySeat];
   const mine = canAct && g.winner == null && g.current === mySeat;
@@ -41,15 +48,11 @@ export function GameBoard({ game: g, mySeat, canAct, onMove, onToast, actions, o
   if (prevKey !== stateKey) {
     setPrevKey(stateKey);
     setSel(null);
-    setHint(null);
   }
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setSel(null);
-        setHint(null);
-      }
+      if (e.key === "Escape") setSel(null);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -69,14 +72,12 @@ export function GameBoard({ game: g, mySeat, canAct, onMove, onToast, actions, o
   const doTarget = (s: Source, t: string) => {
     const [kind, i] = t.split(":");
     setSel(null);
-    setHint(null);
     if (kind === "build") onMove({ type: "play", src: s, build: Number(i) });
     else if (kind === "mydiscard" && s.type === "hand") onMove({ type: "discard", hand: s.index, pile: Number(i) });
   };
 
   const clickSource = (k: string) => {
     if (!mine) return;
-    setHint(null);
     setSel((cur) => (srcKey(cur) === k ? null : parseSrc(k)));
   };
   const clickTarget = (t: string) => {
@@ -89,19 +90,7 @@ export function GameBoard({ game: g, mySeat, canAct, onMove, onToast, actions, o
     if (b) doTarget(s, b);
     else onToast?.("That card doesn't fit any building pile.");
   };
-  const showHint = () => {
-    if (!mine) return;
-    const mv = nextMove(g, "hard");
-    if (mv.type === "play") setHint({ src: mv.src, target: `build:${mv.build}` });
-    else if (mv.type === "discard") {
-      setHint({ src: { type: "hand", index: mv.hand }, target: `mydiscard:${mv.pile}` });
-      onToast?.("Nothing useful to play — discard to end your turn.");
-    }
-    if (mv.type !== "end") setSel(mv.type === "play" ? mv.src : { type: "hand", index: mv.hand });
-  };
-
   const selK = mine ? srcKey(sel) : "";
-  const hintSrc = hint ? srcKey(hint.src) : "";
   const srcProps = (k: string) =>
     mine
       ? {
@@ -119,13 +108,11 @@ export function GameBoard({ game: g, mySeat, canAct, onMove, onToast, actions, o
           },
           onDragEnd: () => setDragging(false),
           selected: selK === k,
-          hinted: hintSrc === k,
           className: `cursor-grab hover:-translate-y-1 ${dragging && selK === k ? "opacity-45" : ""}`,
         }
       : {};
   const tgtProps = (t: string) => ({
     "data-target": t,
-    "data-hinted": hint?.target === t || undefined,
     onClick: (e: React.MouseEvent) => {
       if (sel && targets.has(t)) {
         e.stopPropagation();
@@ -144,10 +131,120 @@ export function GameBoard({ game: g, mySeat, canAct, onMove, onToast, actions, o
       if (sel && targets.has(t)) doTarget(sel, t);
     },
   });
-  const tgtGlow = (t: string) => (targets.has(t) ? "animate-glow cursor-pointer" : hint?.target === t ? "shadow-[0_0_0_3px_var(--color-hint),0_0_22px_rgb(125_249_255/0.6)]" : "");
+  const tgtGlow = (t: string) => (targets.has(t) ? "animate-glow cursor-pointer" : "");
 
   // Opponents in turn order after me.
   const order = useMemo(() => g.players.map((_, i) => (mySeat + 1 + i) % g.players.length).filter((i) => i !== mySeat), [g.players, mySeat]);
+
+  /** One player's area: stockpile, hand, discards (left to right).
+   * The same layout for everyone; only your own cards are face up and playable. */
+  const area = (seat: number) => {
+    const p: PlayerState = g.players[seat];
+    const isMe = seat === mySeat;
+    const active = g.current === seat && g.winner == null;
+    const showPresence = !isMe && online && !p.left;
+    return (
+      <section
+        key={seat}
+        aria-label={isMe ? "Your cards" : `${p.name}'s cards`}
+        className={`rounded-[20px] border bg-black/20 p-3 transition sm:px-4 sm:pt-3 sm:pb-4 ${p.left ? "opacity-50" : ""} ${active ? "border-gold shadow-[0_0_0_1px_var(--color-gold),0_0_24px_rgb(255_197_51/0.25)]" : g.winner === seat ? "border-emerald-400" : "border-white/10"}`}
+      >
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <span className="grid size-6 flex-none place-items-center rounded-full bg-gold text-xs font-bold text-amber-950">{p.name[0]?.toUpperCase()}</span>
+          <b className="truncate">
+            {p.name}
+            {isMe && <span className="font-normal text-white/70"> (you)</span>}
+          </b>
+          {p.left && <span className="rounded-full bg-white/15 px-2 text-[0.7rem]">Left</span>}
+          {showPresence && <span className={`text-[0.7rem] ${online[seat] ? "text-emerald-300" : "text-red-300"}`}>{online[seat] ? "● online" : "● offline"}</span>}
+          <span className="text-xs text-white/70">
+            Turn {p.stats.turns} · {p.stats.cardsPlayed} cards played
+          </span>
+          {!isMe && opponentExtra && <span className="ml-auto">{opponentExtra(seat)}</span>}
+        </div>
+        <div className="flex flex-wrap items-start gap-[clamp(0.8rem,3vw,2.2rem)]">
+          <div>
+            <div className="lbl mb-3.5">Stockpile</div>
+            <StockPile count={p.stock.length}>
+              <Card value={top(p.stock)} {...(isMe ? srcProps("stock") : {})} />
+            </StockPile>
+          </div>
+          {/* Stockpile always left, discards always right; the hand follows the stockpile
+              (on phones it wraps onto its own row below them). */}
+          <div className="order-last min-w-0 basis-full sm:order-none sm:ml-[clamp(0.5rem,2vw,2rem)] sm:flex-1 sm:basis-auto">
+            <div className="lbl mb-3.5">Hand</div>
+            <div className="flex min-h-[calc(var(--cw)*1.4)] items-center gap-[clamp(0.3rem,1vw,0.6rem)]">
+              {p.hand.length ? (
+                p.hand.map((c, i) => (isMe ? <Card key={i} value={c} {...srcProps(`hand:${i}`)} /> : <CardBack key={i} />))
+              ) : (
+                <span className="text-sm text-white/70">Empty</span>
+              )}
+            </div>
+          </div>
+          <div className="ml-auto">
+            <div className="lbl mb-3.5">Discards</div>
+            <div className="flex gap-[clamp(0.3rem,1.2vw,0.8rem)]">
+              {p.discards.map((d, i) => {
+                const t = `mydiscard:${i}`;
+                const key = `${seat}:${i}`;
+                const expanded = d.length > 1 && openPiles.has(key);
+                const shown = expanded ? d : d.slice(-1);
+                const n = Math.max(1, shown.length);
+                const drop = isMe ? tgtProps(t) : {};
+                return (
+                  <div
+                    key={i}
+                    className={`relative w-(--cw) ${d.length > 1 ? "cursor-pointer" : ""}`}
+                    style={{ height: `calc(var(--cw) * 1.4 + ${n - 1} * var(--fan))` }}
+                    {...drop}
+                    onClick={(e) => {
+                      // Discarding onto this pile takes priority; otherwise a click opens/closes the pile.
+                      if (isMe && sel && targets.has(t)) {
+                        e.stopPropagation();
+                        clickTarget(t);
+                      } else if (d.length > 1) {
+                        e.stopPropagation();
+                        togglePile(key);
+                      }
+                    }}
+                  >
+                    {shown.length ? (
+                      shown.map((c, k) => {
+                        const isTop = k === shown.length - 1;
+                        const src = isMe && isTop ? srcProps(`discard:${i}`) : {};
+                        return (
+                          <div key={k} className="absolute left-0" style={{ top: `calc(${k} * var(--fan))` }}>
+                            <Card value={c} {...src} className={`${"className" in src ? src.className : ""} ${isMe && isTop ? tgtGlow(t) : ""}`} />
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <Card className={isMe ? tgtGlow(t) : ""} />
+                    )}
+                    {d.length > 1 && (
+                      <button
+                        type="button"
+                        aria-label={expanded ? "Hide cards underneath" : `Show all ${d.length} cards`}
+                        aria-expanded={expanded}
+                        title={expanded ? "Hide cards underneath" : `Show all ${d.length} cards`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          togglePile(key);
+                        }}
+                        className={`absolute -top-2 -right-2 z-20 grid h-5 min-w-5 cursor-pointer place-items-center rounded-full px-1.5 text-[0.7rem] font-bold shadow ${expanded ? "bg-gold text-amber-950" : "bg-black/75 text-white hover:bg-black"}`}
+                      >
+                        {expanded ? "▲" : d.length}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  };
 
   let status: ReactNode;
   if (g.winner != null) status = g.winner === mySeat ? <b>You win!</b> : <><b>{g.players[g.winner].name}</b> wins.</>;
@@ -162,51 +259,7 @@ export function GameBoard({ game: g, mySeat, canAct, onMove, onToast, actions, o
     <div className="mx-auto grid max-w-[1280px] grid-cols-1 items-start gap-4 pt-4 lg:grid-cols-[minmax(0,1fr)_250px]" onClick={() => setSel(null)}>
       <div className="grid min-w-0 gap-4">
         {/* Opponents */}
-        <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:justify-center sm:gap-3">
-          {order.map((i) => {
-            const p = g.players[i];
-            const active = g.current === i && g.winner == null;
-            const showPresence = online && !p.left;
-            return (
-              <div
-                key={i}
-                className={`flex items-center justify-between gap-3 rounded-2xl border bg-black/20 px-3 py-2 transition sm:block ${p.left ? "opacity-50" : ""} ${active ? "border-gold shadow-[0_0_0_1px_var(--color-gold),0_0_24px_rgb(255_197_51/0.25)]" : g.winner === i ? "border-emerald-400" : "border-white/10"}`}
-              >
-                <div className="flex min-w-0 flex-col items-start gap-0.5 sm:mb-2 sm:flex-row sm:items-center sm:gap-2">
-                  <span className="hidden size-6 flex-none place-items-center rounded-full bg-gold text-xs font-bold text-amber-950 sm:grid">{p.name[0]?.toUpperCase()}</span>
-                  <b className="truncate">{p.name}</b>
-                  {p.left && <span className="rounded-full bg-white/15 px-2 text-[0.7rem]">Left</span>}
-                  {showPresence && (
-                    <span className={`text-[0.7rem] ${online[i] ? "text-emerald-300" : "text-red-300"}`}>{online[i] ? "● online" : "● offline"}</span>
-                  )}
-                  <span className="text-xs text-white/70">{p.hand.length} in hand</span>
-                </div>
-                <div className="flex gap-3">
-                  <div>
-                    <div className="lbl text-[0.62rem] sm:text-xs">Stockpile</div>
-                    <StockPile count={p.stock.length} mini>
-                      <Card value={top(p.stock)} mini />
-                    </StockPile>
-                  </div>
-                  <div>
-                    <div className="lbl text-[0.62rem] sm:text-xs">Discards</div>
-                    <div className="flex gap-1.5">
-                      {p.discards.map((d, j) => (
-                        <div key={j} className="relative" title={d.length ? d.map(cardName).join(" → ") : "empty"}>
-                          <Card value={top(d)} mini />
-                          {d.length > 1 && (
-                            <span className="absolute -top-1.5 -right-1.5 z-10 rounded-full bg-black/70 px-1.5 text-[0.65rem] leading-normal">{d.length}</span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-                {opponentExtra?.(i)}
-              </div>
-            );
-          })}
-        </div>
+        <div className="grid gap-3">{order.map(area)}</div>
 
         {/* Center: draw pile, building piles, completed */}
         <div className="flex flex-wrap items-end justify-center gap-[clamp(0.8rem,3vw,2.4rem)] rounded-[20px] border border-white/5 bg-black/15 p-3 sm:flex-nowrap sm:p-4">
@@ -247,9 +300,6 @@ export function GameBoard({ game: g, mySeat, canAct, onMove, onToast, actions, o
             <span className="rounded-full bg-black/25 px-2.5 text-xs text-white/80">Turn {g.turn}</span>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <button className="btn btn-sm" onClick={showHint} disabled={!mine}>
-              Hint
-            </button>
             {mine && !me.hand.length && (
               <button className="btn btn-sm" onClick={() => onMove({ type: "end" })}>
                 End turn
@@ -260,57 +310,7 @@ export function GameBoard({ game: g, mySeat, canAct, onMove, onToast, actions, o
         </div>
 
         {/* My area */}
-        <div className="rounded-[20px] border border-white/10 bg-black/20 p-3 sm:px-4 sm:pt-3 sm:pb-4">
-          <div className="mb-2 flex items-center gap-2">
-            <span className="grid size-6 place-items-center rounded-full bg-gold text-xs font-bold text-amber-950">{me.name[0]?.toUpperCase()}</span>
-            <b>{me.name}</b>
-            <span className="text-xs text-white/70">
-              Turn {me.stats.turns} · {me.stats.cardsPlayed} cards played
-            </span>
-          </div>
-          <div className="flex flex-wrap items-start gap-[clamp(0.8rem,3vw,2.2rem)]">
-            <div>
-              <div className="lbl mb-3.5">Stockpile</div>
-              <StockPile count={me.stock.length}>
-                <Card value={top(me.stock)} {...srcProps("stock")} />
-              </StockPile>
-            </div>
-            <div>
-              <div className="lbl mb-3.5">Discards</div>
-              <div className="flex gap-[clamp(0.3rem,1.2vw,0.8rem)]">
-                {me.discards.map((d, i) => {
-                  const t = `mydiscard:${i}`;
-                  const shown = d.slice(-6);
-                  const hidden = d.length - shown.length;
-                  const n = Math.max(1, shown.length);
-                  return (
-                    <div key={i} className="relative w-(--cw)" style={{ height: `calc(var(--cw) * 1.4 + ${n - 1} * var(--fan))` }} {...tgtProps(t)}>
-                      {hidden > 0 && <span className="absolute -top-5 right-0 text-[0.7rem] text-white/70">+{hidden}</span>}
-                      {shown.length ? (
-                        shown.map((c, k) => {
-                          const isTop = k === shown.length - 1;
-                          return (
-                            <div key={k} className="absolute left-0" style={{ top: `calc(${k} * var(--fan))` }}>
-                              <Card value={c} {...(isTop ? srcProps(`discard:${i}`) : {})} className={`${isTop ? (srcProps(`discard:${i}`).className ?? "") : ""} ${isTop ? tgtGlow(t) : ""}`} />
-                            </div>
-                          );
-                        })
-                      ) : (
-                        <Card className={tgtGlow(t)} />
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-            <div className="min-w-0 basis-full sm:flex-1 sm:basis-auto">
-              <div className="lbl mb-3.5">Hand</div>
-              <div className="flex min-h-[calc(var(--cw)*1.4)] items-center gap-[clamp(0.3rem,1vw,0.6rem)]">
-                {me.hand.length ? me.hand.map((c, i) => <Card key={i} value={c} {...srcProps(`hand:${i}`)} />) : <span className="text-sm text-white/70">Empty</span>}
-              </div>
-            </div>
-          </div>
-        </div>
+        {area(mySeat)}
       </div>
 
       {/* Log */}

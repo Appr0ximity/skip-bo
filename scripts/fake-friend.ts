@@ -1,5 +1,5 @@
 /* Dev helper: a second player for testing lobbies locally against the emulators.
- *   npx tsx scripts/fake-friend.ts <LOBBY_CODE> [name]
+ *   npx tsx scripts/fake-friend.ts <LOBBY_CODE> [name] [ms-between-moves]
  * Joins the lobby, stays online, and plays its own turns automatically. */
 process.env.NEXT_PUBLIC_FIREBASE_API_KEY = "demo-api-key";
 process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID = "demo-skipbo";
@@ -10,6 +10,7 @@ process.env.NEXT_PUBLIC_USE_FIREBASE_EMULATORS = "true";
 async function main() {
   const code = (process.argv[2] ?? "").toUpperCase();
   const name = process.argv[3] ?? "Robin";
+  const delay = Number(process.argv[4] ?? 600);
   if (!code) throw new Error("usage: fake-friend.ts <CODE> [name]");
   const { fb } = await import("../src/lib/firebase");
   const auth = await import("firebase/auth");
@@ -44,7 +45,7 @@ async function main() {
 
   // Act on the latest state at a human-ish pace.
   for (;;) {
-    await new Promise((r) => setTimeout(r, 600));
+    await new Promise((r) => setTimeout(r, delay));
     const room = latest as import("../src/lib/online/rooms").Room | null;
     if (!room || room.status !== "playing" || !room.game) continue;
     const g = JSON.parse(room.game.state) as GameState;
